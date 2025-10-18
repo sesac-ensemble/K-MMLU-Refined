@@ -1,0 +1,41 @@
+# K-MMLU-Refined Project .gitignore
+
+# 1. 운영체제 및 IDE 관련 파일 (OS & IDE)
+######################################
+.ipynb_checkpoints # Jupyter Notebook 체크포인트
+
+
+# 2. Python 환경 관련
+######################################
+__pycache__/
+*.pyc
+*.pyd
+.venv
+venv/
+env/
+
+
+# 3. 데이터 및 결과물 (Data & Results)
+######################################
+logs/
+results/
+*.csv
+*.json
+*.jsonl
+*.pkl
+
+
+# 4. 모델 가중치 및 체크포인트 (Model Weights & Checkpoints)
+######################################
+*.pt
+*.pth
+*.h5
+*.onnx
+*.safetensors
+checkpoints/
+
+
+# 5. 환경 설정 및 비밀 정보
+######################################
+# 환경 변수 파일 (API 키, 비밀 정보 포함 가능성)
+.env
