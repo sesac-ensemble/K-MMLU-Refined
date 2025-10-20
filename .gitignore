@@ -39,3 +39,5 @@ checkpoints/
 ######################################
 # 환경 변수 파일 (API 키, 비밀 정보 포함 가능성)
 .env
+/unsloth_compiled_cache
+/result
