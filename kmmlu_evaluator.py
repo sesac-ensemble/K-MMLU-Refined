@@ -3,6 +3,7 @@ import pandas as pd
 import re
 import random
 import argparse
+import json
 from tqdm import tqdm
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
@@ -15,12 +16,17 @@ class KMMLUEvaluator:
     - 한국어 LLM 모델을 KMMLU 벤치마크로 평가
     - 여러 모델을 쉽게 평가할 수 있도록 모듈화
     """
-    def __init__(self, model_id: str, batch_size: int = 4, seed: int = 42, output_prefix: str = None):
+    def __init__(self, model_id: str, batch_size: int = 4, seed: int = 42, 
+                 num_shots: int = 5, prompting_strategy: str = "random",
+                 output_prefix: str = None, test_subsets: list = None):
         self.model_id = model_id
         self.batch_size = batch_size
         self.seed = seed
+        self.num_shots = num_shots
+        self.prompting_strategy = prompting_strategy
         self.output_prefix = output_prefix or self._generate_output_prefix()
-        
+        self.test_subsets = test_subsets  # None이면 전체, 리스트면 특정 subset만
+           
         # Random seed 고정 (재현성)
         random.seed(self.seed)
         torch.manual_seed(self.seed)
@@ -83,7 +89,8 @@ class KMMLUEvaluator:
 
         for c in ["A", "B", "C", "D"]:
             prompt += f"{c}. {self._normalize_text(ex[c])}\n"
-
+        
+        # 기존 random 전략
         prompt += "정답:"
         if include_answer:
             ans = str(ex['answer']).strip().upper()
@@ -94,10 +101,9 @@ class KMMLUEvaluator:
 
 
     def _make_prompt(self, few_shot, test_ex):
-        """5-shot 예시 + 실제 문제를 하나의 긴 입력 프롬프트로 합침"""
-        return "".join([self._format_example(e) for e in few_shot]) + \
-               self._format_example(test_ex, include_answer=False)
-
+            """5-shot 예시 + 실제 문제를 하나의 긴 입력 프롬프트로 합침"""
+            return "".join([self._format_example(e) for e in few_shot]) + \
+                self._format_example(test_ex, include_answer=False)
 
     def _extract_answer_index(self, ex):
         """데이터셋의 정답 컬럼을 숫자 인덱스로 변환"""
@@ -117,6 +123,7 @@ class KMMLUEvaluator:
         """모델의 마지막 출력(logits)을 이용해 각 선택지의 확률 계산"""
         with torch.no_grad():
             outputs = self.model(**inputs)
+            # outputs = self.model.generate(**inputs, max_new_tokens=512) # 수정
             logits = outputs.logits[:, -1, :]
 
         choice_ids = [self.tokenizer.encode(ch, add_special_tokens=False)
@@ -130,13 +137,34 @@ class KMMLUEvaluator:
         probs = torch.stack(avg_scores, dim=1)
         preds = torch.argmax(probs, dim=-1)
         return preds.cpu().tolist()
+    
+    def _predict_logits(self, inputs):
+            """모델의 마지막 출력(logits)을 이용해 각 선택지의 확률 계산"""
+            with torch.no_grad():
+                outputs = self.model(**inputs)
+                logits = outputs.logits[:, -1, :]
+
+            choice_ids = [self.tokenizer.encode(ch, add_special_tokens=False)
+                        for ch in ["A", "B", "C", "D"]]
+
+            avg_scores = []
+            for cid in choice_ids:
+                token_logits = logits[:, cid].mean(dim=-1)
+                avg_scores.append(token_logits)
+
+            probs = torch.stack(avg_scores, dim=1)
+            preds = torch.argmax(probs, dim=-1)
+            return preds.cpu().tolist()
 
 
     def evaluate(self):
         """전체 KMMLU subset 평가"""
         results, all_correct, all_total = [], 0, 0
-
-        for subset in tqdm(self.subsets, desc="KMMLU 전체 평가"):
+        
+         # test_subsets가 지정되면 해당 subset만, 아니면 전체
+        subsets_to_evaluate = self.test_subsets if self.test_subsets else self.subsets
+        
+        for subset in tqdm(subsets_to_evaluate, desc="KMMLU  평가"):
             try:
                 dataset = load_dataset("HAERAE-HUB/KMMLU", subset)
 
@@ -158,7 +186,7 @@ class KMMLUEvaluator:
 
                 # Random seed로 고정된 5개 샘플 선택
                 random.seed(self.seed)  # 각 subset마다 동일한 시드 재설정
-                few_shot = random.sample(dev, min(5, len(dev)))
+                few_shot = random.sample(dev, min(self.num_shots, len(dev)))
 
                 prompts = [self._make_prompt(few_shot, t) for t in test]
                 truths = [self._extract_answer_index(t) for t in test]
@@ -175,7 +203,7 @@ class KMMLUEvaluator:
                                             padding=True,
                                             truncation=True,
                                             max_length=3072).to(self.model.device)
-
+                                       
                     preds = self._predict_logits(inputs)
 
                     for p, t in zip(preds, batch_truths):
@@ -227,23 +255,36 @@ class KMMLUEvaluator:
         df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
         print(f"\n결과 저장 완료: {csv_filename}")
 
-        # 요약 통계 JSON 저장
-        summary = {
+        # 상세 JSON 저장 (요약 + 세부정보 통합)
+        detailed_results = {
             "model_id": self.model_id,
             "evaluation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "seed": self.seed,
-            "overall_accuracy": round(overall_acc, 4),
-            "correct_answers": correct,
-            "total_questions": total,
-            "category_accuracy": {k: round(v, 4) for k, v in cat_mean.to_dict().items()}
+            "experiment_config": {
+                "seed": self.seed,
+                "batch_size": self.batch_size,
+                "num_shots": self.num_shots,
+                "prompting_strategy": f"{self.prompting_strategy}_{self.num_shots}shot"
+        },
+            "summary": {
+                "overall_accuracy": round(overall_acc, 4),
+                "correct_answers": correct,
+                "total_questions": total,
+                "category_accuracy": {k: round(v, 4) for k, v in cat_mean.to_dict().items()}
+            },
+            "subset_scores": [
+                {
+                    "subset": row["Subset"],
+                    "category": row["Category"],
+                    "accuracy": round(row["Accuracy"], 4)
+                }
+                for _, row in df.iterrows()
+            ]
         }
-
-        import json
-        json_filename = f"kmmlu_{self.output_prefix}_summary.json"
-        with open(json_filename, 'w', encoding='utf-8') as f:
-            json.dump(summary, f, ensure_ascii=False, indent=2)
-        print(f"요약 저장 완료: {json_filename}\n")
-
+        
+        json_filename = f"kmmlu_{self.output_prefix}.json"
+        with open(json_filename, "w", encoding="utf-8") as f:
+            json.dump(detailed_results, f, ensure_ascii=False, indent=2)
+        print(f"=== JSON 저장 완료: {json_filename}")
 
     def _get_official_subsets(self):
         return [
@@ -286,7 +327,7 @@ class KMMLUEvaluator:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='KMMLU 모델 평가 도구')
+    parser = argparse.ArgumentParser(description='KMMLU 평가')
     parser.add_argument('--model_id', type=str, 
                         default="Bllossom/llama-3.2-Korean-Bllossom-3B",
                         help='평가할 HuggingFace 모델 ID')
@@ -294,31 +335,35 @@ def main():
                         help='배치 크기 (GPU 메모리에 따라 조정)') # 메모리 부족시 2, 메모리 충분 시 8
     parser.add_argument('--seed', type=int, default=42,
                         help='Random seed (재현성)')
+    parser.add_argument("--num_shots", type=int, default=5, 
+                        help="Few-shot 예시 개수 (0=zero-shot, 5=5-shot)")
+    parser.add_argument("--prompting_strategy", type=str, default="random",
+                        choices=["random", "cot", "similarity", "meta_prompt", 
+                             "gradient", "zero_shot", "self_consistency"],
+                        help="프롬프트 전략")
     parser.add_argument('--output_prefix', type=str, default=None,
                         help='출력 파일명 prefix (기본: 모델명_타임스탬프)')
+    parser.add_argument("--test_subsets", type=str, default=None,
+                        help="테스트할 subset (콤마로 구분, 예: 'Math,Accounting')")
     
     args = parser.parse_args()
+    
+     # test_subsets 파싱
+    test_subsets = None
+    if args.test_subsets:
+        test_subsets = [s.strip() for s in args.test_subsets.split(',')]
 
     evaluator = KMMLUEvaluator(
         model_id=args.model_id,
         batch_size=args.batch_size,
         seed=args.seed,
-        output_prefix=args.output_prefix
+        num_shots=args.num_shots,
+        prompting_strategy=args.prompting_strategy,
+        output_prefix=args.output_prefix,
+        test_subsets=test_subsets
     )
     evaluator.evaluate()
 
 
 if __name__ == "__main__":
     main()
-
-# python kmmlu_evaluator.py
-# python kmmlu_evaluator.py --model_id "your-username/your-finetuned-model"
-# python kmmlu_evaluator.py --batch_size 2  # 메모리 부족 시
-# python kmmlu_evaluator.py --batch_size 8  # 메모리 충분 시
-# python kmmlu_evaluator.py --output_prefix "baseline_v1"
-# # 결과: kmmlu_baseline_v1.csv, kmmlu_baseline_v1_summary.json
-# python kmmlu_evaluator.py --seed 123
-# # compare_models.sh
-# python kmmlu_evaluator.py --model_id "Bllossom/llama-3.2-Korean-Bllossom-3B" --output_prefix "baseline"
-# python kmmlu_evaluator.py --model_id "your-username/finetuned-model" --output_prefix "finetuned"
-
