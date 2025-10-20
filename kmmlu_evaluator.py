@@ -277,7 +277,9 @@ class KMMLUEvaluator:
                     "category": row["Category"],
                     "accuracy": round(row["Accuracy"], 4)
                 }
-                for _, row in df.iterrows()
+                for _, row in df.sort_values(by=["Category", "Subset"], 
+                             key=lambda x: x.map(lambda s: s.lower()) if x.name == "Subset" else x).iterrows()
+                #for _, row in df.iterrows()
             ]
         }
         
@@ -344,7 +346,7 @@ def main():
     parser.add_argument('--output_prefix', type=str, default=None,
                         help='출력 파일명 prefix (기본: 모델명_타임스탬프)')
     parser.add_argument("--test_subsets", type=str, default=None,
-                        help="테스트할 subset (콤마로 구분, 예: 'Math,Accounting')")
+                        help="테스트할 subset (콤마로 구분, 예: 'Math,Accounting')") # _get_official_subsets 에 있는 서브셋명 사용하기! 
     
     args = parser.parse_args()
     
