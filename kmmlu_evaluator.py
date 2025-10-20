@@ -73,7 +73,7 @@ class KMMLUEvaluator:
         # unsloth FastLanguageModel 사용
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name = self.model_id,
-            max_seq_length = 1024,  # KMMLU 평가 시 긴 프롬프트 처리를 위해 설정
+            max_seq_length = 4096,  # KMMLU 평가 시 긴 프롬프트 처리를 위해 설정
             dtype = None,           # 자동으로 bfloat16 또는 float16 설정
             load_in_4bit = True,    # 4-bit QLoRA 방식 로드
         )
@@ -167,6 +167,9 @@ class KMMLUEvaluator:
 
     def evaluate(self):
         """전체 KMMLU subset 평가"""
+        # 시작 시간
+        start_time = datetime.now()
+        
         results, all_correct, all_total = [], 0, 0
 
         for subset in tqdm(self.subsets, desc="KMMLU 전체 평가"):
@@ -236,11 +239,15 @@ class KMMLUEvaluator:
                     "Category": self.supercategories.get(subset, "N/A"),
                     "Accuracy": 0.0
                 })
+        
+        # 소요 시간 계산
+        end_time = datetime.now()
+        time_elapsed = end_time - start_time
+        
+        self._summarize(results, all_correct, all_total, time_elapsed)
 
-        self._summarize(results, all_correct, all_total)
 
-
-    def _summarize(self, results, correct, total):
+    def _summarize(self, results, correct, total, time_elapsed):
         """평가 결과를 평균·CSV로 저장"""
         df = pd.DataFrame(results)
         cat_mean = df.groupby("Category")["Accuracy"].mean().sort_index()
@@ -267,6 +274,8 @@ class KMMLUEvaluator:
         detailed_results = {
             "model_id": self.model_id,
             "evaluation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "time_elapsed": str(time_elapsed),
+            "time_elapsed_seconds": round(time_elapsed.total_seconds(), 2),
             "experiment_config": {
                 "seed": self.seed,
                 "batch_size": self.batch_size,
