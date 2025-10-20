@@ -30,7 +30,7 @@ client = Client()
 ####################################
 
 # --- 1. JSON 파일 로드 ---
-json_file_name = 'kmmlu_baseline_v1_summary.json'           ################# 수정
+json_file_name = 'kmmlu_baseline_v1.json'           ################# 수정
 try:
     with open(json_file_name, 'r', encoding='utf-8') as f:
         data = json.load(f)
@@ -61,17 +61,20 @@ try:
         id=run_id,
         trace_id=trace_id,
         run_type="chain",
-        project_name="K-MMLU-Refined",
+        project_name="K-MMLU-Refined_dev",
         inputs={
             "model_id": data['model_id'],
-            "seed": data['seed'],
             "evaluation_date": data['evaluation_date'],
-            "total_questions": data['total_questions']
+            "seed": data['experiment_config']['seed'],
+            "batch_size": data['experiment_config']['batch_size'],
+            "num_shots": data['experiment_config']['num_shots'],
+            "prompting_strategy": data['experiment_config']['prompting_strategy'],
+            "total_questions": data['summary']['total_questions']
         },
         outputs={
-            "overall_accuracy": data['overall_accuracy'],
-            "correct_answers": data['correct_answers'],
-            "category_accuracy": data['category_accuracy']
+            "overall_accuracy": data['summary']['overall_accuracy'],
+            "correct_answers": data['summary']['correct_answers'],
+            "category_accuracy": data['summary']['category_accuracy']
         },
         start_time=start_time,
         end_time=end_time,
