@@ -7,6 +7,9 @@ from tqdm import tqdm
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from datetime import datetime
+from unsloth import FastLanguageModel
+import os
+import json
 
 
 class KMMLUEvaluator:
@@ -15,7 +18,7 @@ class KMMLUEvaluator:
     - 한국어 LLM 모델을 KMMLU 벤치마크로 평가
     - 여러 모델을 쉽게 평가할 수 있도록 모듈화
     """
-    def __init__(self, model_id: str, batch_size: int = 4, seed: int = 42, output_prefix: str = None):
+    def __init__(self, model_id: str, batch_size: int = 4, seed: int = 42, output_prefix: str = None, subsets_to_test: list = None):
         self.model_id = model_id
         self.batch_size = batch_size
         self.seed = seed
@@ -28,7 +31,16 @@ class KMMLUEvaluator:
             torch.cuda.manual_seed_all(self.seed)
         
         self.tokenizer, self.model = self._load_model()
-        self.subsets = self._get_official_subsets()
+        
+        all_subsets = self._get_official_subsets()
+        if subsets_to_test:
+            # 사용자가 지정한 목록이 있으면 해당 목록으로 필터링
+            self.subsets = [s for s in subsets_to_test if s in all_subsets]
+            print(f"\n[알림] {len(self.subsets)}개의 지정된 subset만 평가합니다.")
+        else:
+            # 지정하지 않으면 전체 목록 사용
+            self.subsets = all_subsets
+            
         self.supercategories = self._get_supercategories()
         self.letter_map = {"A": 0, "B": 1, "C": 2, "D": 3}
 
@@ -47,26 +59,43 @@ class KMMLUEvaluator:
         print(f"Random Seed: {self.seed}")
         print(f"{'='*60}\n")
         
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.bfloat16
-        )
+        # bnb_config = BitsAndBytesConfig( # unsloth 사용해서 주석 처리함
+        #     load_in_4bit=True,
+        #     bnb_4bit_use_double_quant=True,
+        #     bnb_4bit_quant_type="nf4",
+        #     bnb_4bit_compute_dtype=torch.bfloat16
+        # )
 
-        tokenizer = AutoTokenizer.from_pretrained(self.model_id)
+        # unsloth FastLanguageModel 사용
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name = self.model_id,
+            max_seq_length = 1024,  # KMMLU 평가 시 긴 프롬프트 처리를 위해 설정
+            dtype = None,           # 자동으로 bfloat16 또는 float16 설정
+            load_in_4bit = True,    # 4-bit QLoRA 방식 로드
+        )
         tokenizer.padding_side = "left"
+        
         if tokenizer.pad_token is None:
             tokenizer.pad_token = tokenizer.eos_token
-
-        model = AutoModelForCausalLM.from_pretrained(
-            self.model_id,
-            quantization_config=bnb_config,
-            device_map="auto"
-        )
+        
+        # 학습 시 사용
+        # model = FastLanguageModel.get_peft_model(
+        #     model,
+        #     r = 16, # LoRA Rank
+        #     target_modules = ["q_proj", "v_proj", "o_proj", "k_proj", "gate_proj", "up_proj", "down_proj"],
+        #     lora_alpha = 16,
+        #     lora_dropout = 0,
+        #     bias = "none",
+        #     use_gradient_checkpointing = "unsloth", # 메모리 절약 기능
+        #     random_state = 42,
+        #     use_peft_bnb_config = False,
+        #     # 기타 PEFT 설정
+        # )
+        
         model.eval()
         print("모델 로딩 완료.\n")
         return tokenizer, model
+    
 
 
     def _normalize_text(self, text):
@@ -221,9 +250,12 @@ class KMMLUEvaluator:
         print("-"*60)
         print(f"\n** 전체 평균 정확도: {overall_acc:.4f} ({correct}/{total}) **")
         print("="*60)
+        
+        result_dir = "result"
+        os.makedirs(result_dir, exist_ok=True)
 
         # CSV 파일 저장
-        csv_filename = f"kmmlu_{self.output_prefix}.csv"
+        csv_filename = os.path.join(result_dir, f"kmmlu_{self.output_prefix}.csv")
         df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
         print(f"\n결과 저장 완료: {csv_filename}")
 
@@ -238,8 +270,7 @@ class KMMLUEvaluator:
             "category_accuracy": {k: round(v, 4) for k, v in cat_mean.to_dict().items()}
         }
 
-        import json
-        json_filename = f"kmmlu_{self.output_prefix}_summary.json"
+        json_filename = os.path.join(result_dir, f"kmmlu_{self.output_prefix}_summary.json")
         with open(json_filename, 'w', encoding='utf-8') as f:
             json.dump(summary, f, ensure_ascii=False, indent=2)
         print(f"요약 저장 완료: {json_filename}\n")
@@ -296,6 +327,8 @@ def main():
                         help='Random seed (재현성)')
     parser.add_argument('--output_prefix', type=str, default=None,
                         help='출력 파일명 prefix (기본: 모델명_타임스탬프)')
+    parser.add_argument('--subsets', type=str, nargs='+', default=None,
+                        help='테스트할 subset 이름 목록 (예: Accounting Biology). 지정하지 않으면 전체 48개 평가.')
     
     args = parser.parse_args()
 
@@ -303,7 +336,8 @@ def main():
         model_id=args.model_id,
         batch_size=args.batch_size,
         seed=args.seed,
-        output_prefix=args.output_prefix
+        output_prefix=args.output_prefix,
+        subsets_to_test=args.subsets,
     )
     evaluator.evaluate()
 
