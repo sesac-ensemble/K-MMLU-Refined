@@ -2,6 +2,11 @@
 K-MMLU 벤치마크 최적화 프로젝트
 
 
+# 변경사항
+1. 환경 설정을 위한 bash 폴더 추가
+2. unsloth 적용
+3. subsets parser 추가
+4. csv, json 파일 result 폴더에 추가
 
 ## LangSmith 평가 로깅 스크립트 (K-MMLU-Refined)
 
