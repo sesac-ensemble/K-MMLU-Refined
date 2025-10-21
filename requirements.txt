@@ -1,0 +1,17 @@
+# K-MMLU-Refined: Core Dependencies + Tracking/Hub Tools
+
+# 1. 모델/환경 필수 (Required for kmmlu_evaluator.py execution)
+torch==2.4.1                 # GPU 가속 및 주요 딥러닝 연산 (코드 핵심) 
+transformers==4.57.1         # 모델 로드 및 토크나이징 (AutoModelForCausalLM, AutoTokenizer) 
+accelerate==0.34.2           # 분산 및 병렬 처리 (모델 로딩 시 device_map="auto" 사용) 
+datasets==4.2.0              # KMMLU 데이터셋 로드 (load_dataset) 
+safetensors==0.6.2           # 모델 로드 시 필요 (일부 모델 형식) 
+bitsandbytes==0.48.1         # 4bit 양자화 설정 (BitsAndBytesConfig) 
+
+# 2. 허브 및 데이터 처리 (Hugging Face Hub & Data Utils)
+huggingface-hub==0.35.3      # 모델 및 데이터셋 관리 기능
+pandas==2.2.3                # 결과 요약 및 CSV 저장(DataFrame) 
+tqdm==4.67.1                 # 진행률 표시줄
+
+# 3. 실험 추적 (LangSmith)
+langsmith==0.4.37            # LLM 실험 추적 및 디버깅 도구
