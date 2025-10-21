@@ -39,8 +39,8 @@ except FileNotFoundError:
     exit()
 
 # Run 설정
-RUNNER_INITIAL = "JH"  # 이름 이니셜              ################# 수정
-CURRENT_DATE = "251019"                         ################# 수정
+RUNNER_INITIAL = "IYSI"  # 이름 이니셜              ################# 수정
+CURRENT_DATE = datetime.now()                         ################# 수정
 MODEL_VERSION = data['model_id'].split('/')[-1]
 
 # 타임스탬프 추가하여 매번 다른 run_id 생성
