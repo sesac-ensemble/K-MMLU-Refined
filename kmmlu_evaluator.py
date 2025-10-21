@@ -10,6 +10,7 @@ from datetime import datetime
 from unsloth import FastLanguageModel
 import os
 import json
+from parser import KMMLUArgumentManager
 
 
 class KMMLUEvaluator:
@@ -243,6 +244,7 @@ class KMMLUEvaluator:
         # 소요 시간 계산
         end_time = datetime.now()
         time_elapsed = end_time - start_time
+        print("소요 시간:", time_elapsed)
         
         self._summarize(results, all_correct, all_total, time_elapsed)
 
@@ -345,25 +347,7 @@ class KMMLUEvaluator:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='KMMLU 모델 평가 도구')
-    parser.add_argument('--model_id', type=str, 
-                        default="Bllossom/llama-3.2-Korean-Bllossom-3B",
-                        help='평가할 HuggingFace 모델 ID')
-    parser.add_argument('--batch_size', type=int, default=4,
-                        help='배치 크기 (GPU 메모리에 따라 조정)') # 메모리 부족시 2, 메모리 충분 시 8
-    parser.add_argument('--seed', type=int, default=42,
-                        help='Random seed (재현성)')
-    parser.add_argument("--num_shots", type=int, default=5, 
-                        help="Few-shot 예시 개수 (0=zero-shot, 5=5-shot)")
-    parser.add_argument("--prompting_strategy", type=str, default="random",
-                        choices=["random", "cot", "similarity", "meta_prompt", 
-                             "gradient", "zero_shot", "self_consistency"],
-                        help="프롬프트 전략")
-    parser.add_argument('--output_prefix', type=str, default=None,
-                        help='출력 파일명 prefix (기본: 모델명_타임스탬프)')
-    parser.add_argument('--subsets', type=str, nargs='+', default=None,
-                        help='테스트할 subset 이름 목록 (예: Accounting Biology). 지정하지 않으면 전체 48개 평가.')
-    
+    parser = KMMLUArgumentManager.get_eval_parser()
     args = parser.parse_args()
 
     evaluator = KMMLUEvaluator(
