@@ -10,6 +10,7 @@ from tqdm import tqdm
 from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from datetime import datetime
+import json
 
 
 class KMMLUEvaluator:
@@ -28,12 +29,18 @@ class KMMLUEvaluator:
         model_id: str,
         batch_size: int = 4,
         seed: int = 42,
+        num_shots: int = 5, 
+        prompting_strategy: str = "random",
         output_prefix: str = None,
+        test_subsets: list = None,
     ):
         self.model_id = model_id
         self.batch_size = batch_size
         self.seed = seed
+        self.num_shots = num_shots
+        self.prompting_strategy = prompting_strategy
         self.output_prefix = output_prefix or self._generate_output_prefix()
+        self.test_subsets = test_subsets  # None이면 전체, 리스트면 특정 subset만
 
         random.seed(self.seed)
         torch.manual_seed(self.seed)
@@ -171,9 +178,14 @@ class KMMLUEvaluator:
 
     def evaluate(self):
         """전체 KMMLU subset 평가"""
+        # 시간 측정 시작
+        start_time = datetime.now()
         results, all_correct, all_total = [], 0, 0
-
-        for subset in tqdm(self.subsets, desc="KMMLU 전체 평가"):
+        
+        # test_subsets가 지정되면 해당 subset만, 아니면 전체
+        subsets_to_evaluate = self.test_subsets if self.test_subsets else self.subsets
+        
+        for subset in tqdm(subsets_to_evaluate, desc="KMMLU 평가"):
             try:
                 dataset = load_dataset("HAERAE-HUB/KMMLU", subset)
 
@@ -194,7 +206,7 @@ class KMMLUEvaluator:
                     continue
 
                 random.seed(self.seed)
-                few_shot = random.sample(dev, min(5, len(dev)))
+                few_shot = random.sample(dev, min(self.num_shots, len(dev)))
 
                 prompts = [self._make_prompt(few_shot, t) for t in test]
                 truths = [self._extract_answer_index(t) for t in test]
@@ -259,10 +271,15 @@ class KMMLUEvaluator:
                         "Total": 0,
                     }
                 )
+                
+        # 시간 측정 종료 및 계산
+        time_elapsed = datetime.now() - start_time 
+        print("\n","소요 시간:", time_elapsed)
+        
+        self._summarize(results, all_correct, all_total, time_elapsed)
 
-        self._summarize(results, all_correct, all_total)
 
-    def _summarize(self, results, correct, total):
+    def _summarize(self, results, correct, total, time_elapsed):
         """평가 결과 요약 및 저장"""
         df = pd.DataFrame(results)
 
@@ -289,29 +306,38 @@ class KMMLUEvaluator:
         df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
         print(f"\n결과 저장 완료: {csv_filename}")
 
-        # 요약 통계 JSON 저장
-        summary = {
+        # 상세 JSON 저장 (요약 + 세부정보 통합)
+        detailed_results = {
             "model_id": self.model_id,
             "evaluation_date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "seed": self.seed,
-            "overall_accuracy": round(overall_acc, 4),
-            "overall_accuracy_percent": round(overall_percent, 2),
-            "correct_answers": correct,
-            "total_questions": total,
-            "category_accuracy": {
-                k: round(v, 4) for k, v in cat_mean.to_dict().items()
+            "time_elapsed": str(time_elapsed),
+            "time_elapsed_seconds": round(time_elapsed.total_seconds(), 2),
+            "experiment_config": {
+                "seed": self.seed,
+                "batch_size": self.batch_size,
+                "num_shots": self.num_shots,
+                "prompting_strategy": f"{self.prompting_strategy}_{self.num_shots}shot"
+        },
+            "summary": {
+                "overall_accuracy": round(overall_acc, 4),
+                "correct_answers": correct,
+                "total_questions": total,
+                "category_accuracy": {k: round(v, 4) for k, v in cat_mean.to_dict().items()}
             },
-            "category_accuracy_percent": {
-                k: round(v * 100, 2) for k, v in cat_mean.to_dict().items()
-            },
+            "subset_scores": [
+                {
+                    "subset": row["Subset"],
+                    "category": row["Category"],
+                    "accuracy": round(row["Accuracy"], 4)
+                }
+                for _, row in df.iterrows()
+            ]
         }
 
-        import json
-
-        json_filename = f"kmmlu_{self.output_prefix}_summary.json"
+        json_filename = f"kmmlu_{self.output_prefix}.json"
         with open(json_filename, "w", encoding="utf-8") as f:
-            json.dump(summary, f, ensure_ascii=False, indent=2)
-        print(f"요약 저장 완료: {json_filename}\n")
+            json.dump(detailed_results, f, ensure_ascii=False, indent=2)
+        print(f"=== JSON 저장 완료: {json_filename}")
 
     def _get_official_subsets(self):
         return [
@@ -426,31 +452,40 @@ class KMMLUEvaluator:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="KMMLU 모델 평가 도구")
-    parser.add_argument(
-        "--model_id",
-        type=str,
-        default="Bllossom/llama-3.2-Korean-Bllossom-3B",
-        help="평가할 HuggingFace 모델 ID",
-    )
-    parser.add_argument(
-        "--batch_size", type=int, default=4, help="배치 크기 (GPU 메모리에 따라 조정)"
-    )
-    parser.add_argument("--seed", type=int, default=42, help="Random seed (재현성)")
-    parser.add_argument(
-        "--output_prefix",
-        type=str,
-        default=None,
-        help="출력 파일명 prefix (기본: 모델명_타임스탬프)",
-    )
-
+    parser = argparse.ArgumentParser(description='KMMLU 평가')
+    parser.add_argument('--model_id', type=str, 
+                        default="Bllossom/llama-3.2-Korean-Bllossom-3B",
+                        help='평가할 HuggingFace 모델 ID')
+    parser.add_argument('--batch_size', type=int, default=4,
+                        help='배치 크기 (GPU 메모리에 따라 조정)') # 메모리 부족시 2, 메모리 충분 시 8
+    parser.add_argument('--seed', type=int, default=42,
+                        help='Random seed (재현성)')
+    parser.add_argument("--num_shots", type=int, default=5, 
+                        help="Few-shot 예시 개수 (0=zero-shot, 5=5-shot)")
+    parser.add_argument("--prompting_strategy", type=str, default="random",
+                        choices=["random", "cot", "similarity", "meta_prompt", 
+                             "gradient", "zero_shot", "self_consistency"],
+                        help="프롬프트 전략")
+    parser.add_argument('--output_prefix', type=str, default=None,
+                        help='출력 파일명 prefix (기본: 모델명_타임스탬프)')
+    parser.add_argument("--test_subsets", type=str, default=None,
+                        help="테스트할 subset (콤마로 구분, 예: 'Math,Accounting')")
+    
     args = parser.parse_args()
+    
+    # test_subsets 파싱
+    test_subsets = None
+    if args.test_subsets:
+        test_subsets = [s.strip() for s in args.test_subsets.split(',')]
 
     evaluator = KMMLUEvaluator(
         model_id=args.model_id,
         batch_size=args.batch_size,
         seed=args.seed,
+        num_shots=args.num_shots,
+        prompting_strategy=args.prompting_strategy,
         output_prefix=args.output_prefix,
+        test_subsets=test_subsets
     )
     evaluator.evaluate()
 
