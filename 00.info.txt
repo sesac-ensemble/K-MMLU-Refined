@@ -1,0 +1,43 @@
+1.kmmlu_Base_evaluator : 기본 코드
+-. 정답 형식이 1/2/3/4(int/str) 임을 반영해, answer - 1 규칙으로 0~3 인덱스 변환
+-. 정확도 계산: overall_acc = all_correct / all_total
+================================================================
+2.kmmlu_solar_fewshot_only 
+
+2-1) KMMLU 특정 데이터셋만 테스트 할 경우(olny 평가)
+=> self.subsets = ["Accounting"]  # 평가할 subset만 남김
+
+2-2) few shot을 수동/자동 하는 경우
+-def __init__ 함수 > use_manual_fewshots 값을 True 로 하고 > MANUAL_FEWSHOTS = [ 에 입력되어있는 예시 활용
+
+
+================================================================
+
+3.kmmlu_solar_kowikiQA_opt4(학습 + 평가)
+
+=> Unsloth + 4bit 로딩 + (4bit QLoRA + LoRA)SFT + 5-shot (기본은 dev 랜덤)
+=> KoWikiQA 학습 데이터(학습) + KMMLU(평가)
+=> KoWikiQA 학습 데이터 1만개만 학습(def main(): > --max_train_samples > default=10000)
+
+================================================================
+| 영역         | 기본값                       | 비고                                |
+| ---------- | ------------------------- | --------------------------------- |
+| LoRA       | r=8, α=16, dropout=0.05   | 모델/VRAM에 따라 조정                    |
+| Optim(TRL) | lr=2e-5, ep=1, grad_acc=4 | 빠른 실험용; 본 학습 시 ep/acc/bs 조절       |
+| Few-shot   | 랜덤 dev 5                  | `--use_manual_fewshots`로 고정 예시 전환 |
+| Train size | 10,000                    | `--max_train_samples`로 제어         |
+| dtype      | bfloat16 또는 float16       | GPU에 따라 자동                        |
+| FA2        | 지원 시 활성화                  | 미지원 시 자동 fallback                 |
+| Batch      | 2                         | VRAM에 맞게 `--batch_size` 조절        |
+
+
+모델 / 데이터셋 변경 시 수정해야 할 위치(요약)
+구분	수정 대상 함수	수정해야 할 부분	설명
+모델 변경 시	load_unsloth_model()	model_id 및 dtype 처리	다른 모델(ex. mistralai/Mistral-7B-Instruct-v0.2)로 교체 시 여기에 반영
+	inject_lora()	LoRA 설정 (r, alpha, dropout)	모델별 적정 하이퍼파라미터로 수정
+	TrainingArguments	학습률(learning_rate), 배치(batch_size)	모델 크기에 따라 수정
+데이터셋 변경 시	train_on_kowikiQA()	ex['instruction'], ex['output'] 필드명 변경	새 데이터셋의 구조에 맞게 Key 수정
+	--max_train_samples	데이터 개수 조정	데이터셋 크기 맞게 조절
+평가 데이터 변경 시	_get_official_subsets()	subset 리스트	새 평가셋 구조에 맞게 subset 이름 교체
+	_get_supercategories()	카테고리 매핑	새로운 subset 추가 시 supercategory도 반드시 동기화
+	_extract_answer_index()	정답 형식	만약 답이 문자열(‘A’/‘B’)이면 letter_map 기반으로 수정 필요
