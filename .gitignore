@@ -41,3 +41,4 @@ checkpoints/
 .env
 /unsloth_compiled_cache
 /result
+/qwen2.5_kmmlu_finetuned
