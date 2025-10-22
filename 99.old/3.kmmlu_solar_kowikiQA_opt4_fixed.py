@@ -142,15 +142,24 @@ class KoWikiQA2KMMLU:
         train_ds = train_ds.map(to_text, remove_columns=[c for c in train_ds.column_names if c not in keep_cols])
 
         # LoRA 설정 (경량 파인튜닝)
-        lora_cfg = LoraConfig(
+        self.model = FastLanguageModel.get_peft_model(
+            model=self.model,
             r=8,
             lora_alpha=16,
             lora_dropout=0.05,
             bias="none",
-            task_type="CAUSAL_LM",
-        )
-        self.model = FastLanguageModel.get_peft_model(self.model, lora_cfg)
+            # task_type="CAUSAL_LM"
+            )
         print("LoRA 추가 완료")
+        # lora_cfg = LoraConfig(
+        #     r=int(8),
+        #     lora_alpha=16,
+        #     lora_dropout=0.05,
+        #     bias="none",
+        #     task_type="CAUSAL_LM",
+        # )
+        # self.model = FastLanguageModel.get_peft_model(self.model, lora_cfg)
+        # print("LoRA 추가 완료")
 
         # 학습 설정
         args = TrainingArguments(
@@ -168,7 +177,7 @@ class KoWikiQA2KMMLU:
         # SFTTrainer는 text 단일 필드를 사용하여 SFT 수행
         trainer = SFTTrainer(
             model=self.model,
-            tokenizer=self.tokenizer,
+            # tokenizer=self.tokenizer,
             train_dataset=train_ds,
             args=args,
         )
