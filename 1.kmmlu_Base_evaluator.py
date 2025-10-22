@@ -1,5 +1,7 @@
-# kmmlu_evaluator2.py
-# pip install torch transformers datasets pandas tqdm bitsandbytes accelerate
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# 1.kmmlu_Base_evaluator.py
+
 
 import torch
 import pandas as pd
@@ -15,13 +17,11 @@ import json
 
 class KMMLUEvaluator:
     """
-     KMMLU Evaluator (모듈화 버전)
+    KMMLU Evaluator (모듈화 버전)
     - 한국어 LLM 모델을 KMMLU 벤치마크로 평가
     - 여러 모델을 쉽게 평가할 수 있도록 모듈화
-
-    (추가 수정 사항)
-    - 정답 변환 로직 개선
-    - Accuracy 계산 명확화
+    - Accuracy 계산 명확화(test split만을 대상으로 정답 예측 정확도(Accuracy) 산출
+    - 분야별(supercategory) 평균, 전체 평균을 함께 계산, CSV/JSON로 저장
     """
 
     def __init__(
@@ -29,35 +29,56 @@ class KMMLUEvaluator:
         model_id: str,
         batch_size: int = 4,
         seed: int = 42,
-        num_shots: int = 5, 
-        prompting_strategy: str = "random",
         output_prefix: str = None,
-        test_subsets: list = None,
+        num_shots: int = 0,
+        prompting_strategy: str = "zero-shot",
     ):
+        """모델 초기화 및 로더 세팅"""
         self.model_id = model_id
         self.batch_size = batch_size
         self.seed = seed
+        self.output_prefix = output_prefix or self._generate_output_prefix()
         self.num_shots = num_shots
         self.prompting_strategy = prompting_strategy
-        self.output_prefix = output_prefix or self._generate_output_prefix()
-        self.test_subsets = test_subsets  # None이면 전체, 리스트면 특정 subset만
 
-        random.seed(self.seed)
-        torch.manual_seed(self.seed)
+        # def __init__(self, model_id: str, batch_size: int = 4, seed: int = 42, output_prefix: str = None):
+        #     """모델 초기화 및 로더 세팅"""
+        #     self.model_id = model_id
+        #     self.batch_size = batch_size
+        #     self.seed = seed
+        #     self.output_prefix = output_prefix or self._generate_output_prefix()
+
+        # Random seed 고정
+        random.seed(seed)
+        torch.manual_seed(seed)
         if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(self.seed)
+            torch.cuda.manual_seed_all(seed)
 
         self.tokenizer, self.model = self._load_model()
         self.subsets = self._get_official_subsets()
         self.supercategories = self._get_supercategories()
-        self.letter_map = {"A": 0, "B": 1, "C": 2, "D": 3}
+        # 숫자/문자 정답 모두 대응 (안전 매핑)
+        self.letter_map: Dict[str, int] = {
+            "A": 0,
+            "B": 1,
+            "C": 2,
+            "D": 3,
+            "1": 0,
+            "2": 1,
+            "3": 2,
+            "4": 3,
+        }
 
+    # -----------------------------
     def _generate_output_prefix(self):
+        """출력 파일명용 prefix 생성"""
         model_name = self.model_id.split("/")[-1]
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        return f"{model_name}_{timestamp}"
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return f"{model_name}_{ts}"
 
+    # -----------------------------
     def _load_model(self):
+        """HuggingFace 모델과 토크나이저 로드 (4bit 양자화 지원)"""
         print(f"\n{'='*60}")
         print(f"모델 로딩 중: {self.model_id}")
         print(f"Random Seed: {self.seed}")
@@ -76,140 +97,83 @@ class KMMLUEvaluator:
             tokenizer.pad_token = tokenizer.eos_token
 
         model = AutoModelForCausalLM.from_pretrained(
-            self.model_id, quantization_config=bnb_config, device_map="auto"
+            self.model_id,
+            quantization_config=bnb_config,
+            device_map="auto",
         )
         model.eval()
         print("모델 로딩 완료.\n")
         return tokenizer, model
 
+    # -----------------------------
     def _normalize_text(self, text):
+        """문자열 공백 정규화"""
         if not isinstance(text, str):
             return str(text)
-        text = re.sub(r"\s+", " ", text)
-        return text.strip()
+        return re.sub(r"\s+", " ", text).strip()
 
-    def _format_example(self, ex, include_answer=True):
+    # -----------------------------
+    def _format_example(self, ex, include_answer=False):
+        """문항을 평가용 프롬프트로 변환 (Zero-shot)"""
         prompt = f"문제: {self._normalize_text(ex['question'])}\n"
         for c in ["A", "B", "C", "D"]:
             prompt += f"{c}. {self._normalize_text(ex[c])}\n"
         prompt += "정답:"
-
         if include_answer:
-            ans = self._answer_to_letter(ex["answer"])
+            ans = str(ex["answer"]).strip().upper()
+            if ans.isdigit():
+                ans = ["A", "B", "C", "D"][int(ans) - 1] if 1 <= int(ans) <= 4 else ans
             prompt += f" {ans}\n\n"
+        else:
+            prompt += " "
         return prompt
 
-    def _answer_to_letter(self, answer):
-        """정답 값을 A, B, C, D 문자로 변환 (Few-shot 예시용)"""
-        if isinstance(answer, str):
-            answer = answer.strip().upper()
-            if answer in ["A", "B", "C", "D"]:
-                return answer
-            elif answer.isdigit():
-                idx = int(answer) - 1
-                if 0 <= idx <= 3:
-                    return ["A", "B", "C", "D"][idx]
-        elif isinstance(answer, int):
-            idx = answer - 1
-            if 0 <= idx <= 3:
-                return ["A", "B", "C", "D"][idx]
-
-        print(f"경고: 알 수 없는 정답 형식 - {answer}")
-        return "A"  # 기본값
-
+    # -----------------------------
     def _extract_answer_index(self, ex):
-        """
-        데이터셋의 정답을 0, 1, 2, 3 인덱스로 변환
-        KMMLU answer 형식: 1, 2, 3, 4 (숫자)
-        """
+        """문항의 정답을 0~3 인덱스로 변환"""
         ans = ex["answer"]
-
-        # 정수형 처리 (1, 2, 3, 4 → 0, 1, 2, 3)
-        if isinstance(ans, int):
-            if 1 <= ans <= 4:
-                return ans - 1
-            else:
-                print(f"경고: 범위 밖 정답 - {ans}")
-                return None
-
-        # 문자열 숫자 처리 ("1", "2", "3", "4" → 0, 1, 2, 3)
         if isinstance(ans, str):
-            ans = ans.strip()
-            if ans.isdigit():
-                num = int(ans)
-                if 1 <= num <= 4:
-                    return num - 1
-                else:
-                    print(f"경고: 범위 밖 문자열 정답 - {ans}")
-                    return None
-
-        print(f"경고: 변환 불가 정답 형식 - {ans} (타입: {type(ans)})")
+            ans = ans.strip().upper()
+            if ans in self.letter_map:
+                return self.letter_map[ans]
+            elif ans.isdigit():
+                return int(ans) - 1
+        elif isinstance(ans, int):
+            return ans - 1
         return None
 
-    def _make_prompt(self, few_shot, test_ex):
-        return "".join(
-            [self._format_example(e) for e in few_shot]
-        ) + self._format_example(test_ex, include_answer=False)
-
+    # -----------------------------
     def _predict_logits(self, inputs):
-        """
-        마지막 토큰 위치에서 A, B, C, D 토큰의 logit 확률로 예측
-        주의: 이 방법은 모델이 생성 기반이 아닌 분류 태스크로 학습되지 않은 경우 부정확할 수 있음
-        """
+        """선택지별 로짓(logit)을 계산하고 argmax로 예측"""
         with torch.no_grad():
-            outputs = self.model(**inputs)
-            logits = outputs.logits[:, -1, :]
-
-        # A, B, C, D 각각에 해당하는 토큰 ID들
+            logits = self.model(**inputs).logits[:, -1, :]
         choice_ids = [
-            self.tokenizer.encode(ch, add_special_tokens=False)
+            self.tokenizer.encode(ch, add_special_tokens=False)[0]
             for ch in ["A", "B", "C", "D"]
         ]
-
-        avg_scores = []
-        for cid in choice_ids:
-            # 해당 선택지의 토큰들에 대한 logit 평균
-            token_logits = logits[:, cid].mean(dim=-1)
-            avg_scores.append(token_logits)
-
-        probs = torch.stack(avg_scores, dim=1)
-        preds = torch.argmax(probs, dim=-1)
+        preds = torch.argmax(logits[:, choice_ids], dim=-1)
         return preds.cpu().tolist()
 
+    # -----------------------------
     def evaluate(self):
-        """전체 KMMLU subset 평가"""
-        # 시간 측정 시작
-        start_time = datetime.now()
+        """KMMLU 전체 subset에 대해 Zero-shot 평가 수행"""
         results, all_correct, all_total = [], 0, 0
-        
-        # test_subsets가 지정되면 해당 subset만, 아니면 전체
-        subsets_to_evaluate = self.test_subsets if self.test_subsets else self.subsets
-        
-        for subset in tqdm(subsets_to_evaluate, desc="KMMLU 평가"):
+        start_time = datetime.now()
+
+        for subset in tqdm(self.subsets, desc="KMMLU 전체 평가"):
             try:
                 dataset = load_dataset("HAERAE-HUB/KMMLU", subset)
 
-                if "dev" in dataset:
-                    dev = list(dataset["dev"])
-                elif "train" in dataset:
-                    dev = list(dataset["train"])
-                else:
-                    print(f"{subset}: dev/train 없음 → 건너뜀")
+                # test split만 평가
+                if "test" not in dataset:
+                    print(f"{subset}: test split 없음 → skip")
                     continue
+                test_data = list(dataset["test"])
 
-                if "test" in dataset:
-                    test = list(dataset["test"])
-                elif "validation" in dataset:
-                    test = list(dataset["validation"])
-                else:
-                    print(f"{subset}: test/validation 없음 → 건너뜀")
-                    continue
-
-                random.seed(self.seed)
-                few_shot = random.sample(dev, min(self.num_shots, len(dev)))
-
-                prompts = [self._make_prompt(few_shot, t) for t in test]
-                truths = [self._extract_answer_index(t) for t in test]
+                prompts = [
+                    self._format_example(t, include_answer=False) for t in test_data
+                ]
+                truths = [self._extract_answer_index(t) for t in test_data]
 
                 correct = total = 0
 
@@ -237,25 +201,16 @@ class KMMLUEvaluator:
                             if p == t:
                                 correct += 1
 
-                # Accuracy 계산: 정답 개수 / 전체 문제 수
                 acc = correct / total if total > 0 else 0.0
-                acc_percent = acc * 100  # 백분율 변환
-
-                print(
-                    f"  - {subset}: {acc:.4f} ({acc_percent:.2f}%) - {correct}/{total} 정답"
-                )
+                print(f"  - {subset}: {acc:.4f} ({correct}/{total})")
 
                 results.append(
                     {
                         "Subset": subset,
                         "Category": self.supercategories.get(subset, "N/A"),
-                        "Accuracy": acc,  # 0~1 비율
-                        "Accuracy_Percent": acc_percent,  # 0~100 백분율
-                        "Correct": correct,
-                        "Total": total,
+                        "Accuracy": acc,
                     }
                 )
-
                 all_correct += correct
                 all_total += total
 
@@ -266,24 +221,17 @@ class KMMLUEvaluator:
                         "Subset": subset,
                         "Category": self.supercategories.get(subset, "N/A"),
                         "Accuracy": 0.0,
-                        "Accuracy_Percent": 0.0,
-                        "Correct": 0,
-                        "Total": 0,
                     }
                 )
-                
-        # 시간 측정 종료 및 계산
-        time_elapsed = datetime.now() - start_time 
-        print("\n","소요 시간:", time_elapsed)
-        
+
+        # 평균 및 요약 결과 계산
+        time_elapsed = datetime.now() - start_time
         self._summarize(results, all_correct, all_total, time_elapsed)
 
-
+    # -----------------------------
     def _summarize(self, results, correct, total, time_elapsed):
-        """평가 결과 요약 및 저장"""
+        """평가 결과를 요약하여 출력 및 저장 (CSV, JSON)"""
         df = pd.DataFrame(results)
-
-        # 카테고리별 평균 (비율)
         cat_mean = df.groupby("Category")["Accuracy"].mean().sort_index()
         cat_mean_percent = cat_mean * 100
 
@@ -316,22 +264,24 @@ class KMMLUEvaluator:
                 "seed": self.seed,
                 "batch_size": self.batch_size,
                 "num_shots": self.num_shots,
-                "prompting_strategy": f"{self.prompting_strategy}_{self.num_shots}shot"
-        },
+                "prompting_strategy": f"{self.prompting_strategy}_{self.num_shots}shot",
+            },
             "summary": {
                 "overall_accuracy": round(overall_acc, 4),
                 "correct_answers": correct,
                 "total_questions": total,
-                "category_accuracy": {k: round(v, 4) for k, v in cat_mean.to_dict().items()}
+                "category_accuracy": {
+                    k: round(v, 4) for k, v in cat_mean.to_dict().items()
+                },
             },
             "subset_scores": [
                 {
                     "subset": row["Subset"],
                     "category": row["Category"],
-                    "accuracy": round(row["Accuracy"], 4)
+                    "accuracy": round(row["Accuracy"], 4),
                 }
                 for _, row in df.iterrows()
-            ]
+            ],
         }
 
         json_filename = f"kmmlu_{self.output_prefix}.json"
@@ -339,7 +289,9 @@ class KMMLUEvaluator:
             json.dump(detailed_results, f, ensure_ascii=False, indent=2)
         print(f"=== JSON 저장 완료: {json_filename}")
 
+    # -----------------------------
     def _get_official_subsets(self):
+        """KMMLU 45개 공식 subset 목록 반환"""
         return [
             "Accounting",
             "Agricultural-Sciences",
@@ -389,6 +341,7 @@ class KMMLUEvaluator:
         ]
 
     def _get_supercategories(self):
+        """KMMLU 상위 분야(Supercategory) 매핑"""
         cats = {
             "STEM": [
                 "Biology",
@@ -444,39 +397,60 @@ class KMMLUEvaluator:
                 "Refrigerating-Machinery",
             ],
         }
-        mapping = {}
-        for cat, subs in cats.items():
-            for s in subs:
-                mapping[s] = cat
+        mapping = {s: cat for cat, subs in cats.items() for s in subs}
         return mapping
 
 
 def main():
-    parser = argparse.ArgumentParser(description='KMMLU 평가')
-    parser.add_argument('--model_id', type=str, 
-                        default="Bllossom/llama-3.2-Korean-Bllossom-3B",
-                        help='평가할 HuggingFace 모델 ID')
-    parser.add_argument('--batch_size', type=int, default=4,
-                        help='배치 크기 (GPU 메모리에 따라 조정)') # 메모리 부족시 2, 메모리 충분 시 8
-    parser.add_argument('--seed', type=int, default=42,
-                        help='Random seed (재현성)')
-    parser.add_argument("--num_shots", type=int, default=5, 
-                        help="Few-shot 예시 개수 (0=zero-shot, 5=5-shot)")
-    parser.add_argument("--prompting_strategy", type=str, default="random",
-                        choices=["random", "cot", "similarity", "meta_prompt", 
-                             "gradient", "zero_shot", "self_consistency"],
-                        help="프롬프트 전략")
-    parser.add_argument('--output_prefix', type=str, default=None,
-                        help='출력 파일명 prefix (기본: 모델명_타임스탬프)')
-    parser.add_argument("--test_subsets", type=str, default=None,
-                        help="테스트할 subset (콤마로 구분, 예: 'Math,Accounting')")
-    
+    """KMMLU 평가 실행 진입점"""
+    parser = argparse.ArgumentParser(description="KMMLU 평가")
+    parser.add_argument(
+        "--model_id",
+        type=str,
+        default="Bllossom/llama-3.2-Korean-Bllossom-3B",
+        help="평가할 HuggingFace 모델 ID",
+    )
+    parser.add_argument(
+        "--batch_size", type=int, default=4, help="배치 크기 (GPU 메모리에 따라 조정)"
+    )  # 메모리 부족시 2, 메모리 충분 시 8
+    parser.add_argument("--seed", type=int, default=42, help="Random seed (재현성)")
+    parser.add_argument(
+        "--num_shots",
+        type=int,
+        default=5,
+        help="Few-shot 예시 개수 (0=zero-shot, 5=5-shot)",
+    )
+    parser.add_argument(
+        "--prompting_strategy",
+        type=str,
+        default="random",
+        choices=[
+            "random",
+            "cot",
+            "similarity",
+            "meta_prompt",
+            "gradient",
+            "zero_shot",
+            "self_consistency",
+        ],
+        help="프롬프트 전략",
+    )
+    parser.add_argument(
+        "--output_prefix",
+        type=str,
+        default=None,
+        help="출력 파일명 prefix (기본: 모델명_타임스탬프)",
+    )
+    parser.add_argument(
+        "--test_subsets",
+        type=str,
+        default=None,
+        help="콤마로 구분된 서브셋 이름 리스트 (예: humanities,STEM)",
+    )
+
     args = parser.parse_args()
-    
-    # test_subsets 파싱
-    test_subsets = None
-    if args.test_subsets:
-        test_subsets = [s.strip() for s in args.test_subsets.split(',')]
+
+    test_subsets = args.test_subsets.split(",") if args.test_subsets else None
 
     evaluator = KMMLUEvaluator(
         model_id=args.model_id,
@@ -485,10 +459,23 @@ def main():
         num_shots=args.num_shots,
         prompting_strategy=args.prompting_strategy,
         output_prefix=args.output_prefix,
-        test_subsets=test_subsets
+        test_subsets=args.test_subsets,
     )
+
     evaluator.evaluate()
 
 
 if __name__ == "__main__":
     main()
+
+
+# python 1.kmmlu_Base_evaluator.py
+# python 1.kmmlu_Base_evaluator.py --model_id "your-username/your-finetuned-model"
+# python 1.kmmlu_Base_evaluator.py --batch_size 2  # 메모리 부족 시
+# python 1.kmmlu_Base_evaluator.py --batch_size 8  # 메모리 충분 시
+# python 1.kmmlu_Base_evaluator.py --output_prefix "baseline_v1"
+# # 결과: kmmlu_baseline_v1.csv, kmmlu_baseline_v1_summary.json
+# python 1.kmmlu_Base_evaluator.py --seed 123
+# # compare_models.sh
+# python 1.kmmlu_Base_evaluator.py --model_id "Bllossom/llama-3.2-Korean-Bllossom-3B" --output_prefix "baseline"
+# python 1.kmmlu_Base_evaluator.py --model_id "your-username/finetuned-model" --output_prefix "finetuned"
