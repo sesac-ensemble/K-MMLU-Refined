@@ -51,6 +51,7 @@ class KoWikiQA2KMMLU:
         max_train_samples: int = 10000,
         num_shots: int = 5,
         output_dir: str = "results",
+        output_prefix: str = None,
     ):
         """모델/데이터 환경 초기화 및 로더 준비"""
         self.model_id = model_id
@@ -62,6 +63,9 @@ class KoWikiQA2KMMLU:
         self.max_train_samples = max_train_samples
         self.num_shots = max(1, int(num_shots))
         self.output_dir = output_dir
+        self.output_prefix = output_prefix or self._generate_output_prefix()
+        self.prompting_strategy = "manual" if self.use_manual_fewshots else "random"
+
 
         random.seed(seed)
         torch.manual_seed(seed)
@@ -86,6 +90,13 @@ class KoWikiQA2KMMLU:
             "3": 2,
             "4": 3,
         }
+
+    # -----------------------------
+    def _generate_output_prefix(self):
+        """출력 파일명용 prefix 생성"""
+        model_name = self.model_id.split("/")[-1]
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        return f"{model_name}_{ts}"
 
     # -----------------------------
     def _load_model(self):
