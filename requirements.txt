@@ -1,3 +1,18 @@
+accelerate==0.34.2
+aiohttp==3.10.5
+black==24.8.0
+ipykernel==6.29.5
+pandas==2.2.3
+pip==24.2
+torch==2.4.1
+pytorch-lightning==2.4.0
+scikit-learn==1.5.1
+transformers==4.43.0
+wandb==0.18.1
+datasets
+huggingface_hub
+python-dotenv
+
 # K-MMLU-Refined: Core Dependencies + Tracking/Hub Tools
 
 # 1. 모델/환경 필수 (Required for kmmlu_evaluator.py execution)
