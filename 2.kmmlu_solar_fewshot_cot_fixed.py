@@ -127,18 +127,18 @@ class KMMLUEvaluator:
     #     return prompt
 
     # ----- CoT 조건 추가(1개 텍스트만 실행할 때) --
-    def _make_prompt(self, few_shot, test_ex):
-        base_prompt = "".join(
-            [self._format_example(e) for e in few_shot]
-        ) + self._format_example(test_ex, include_answer=False)
+    # def _make_prompt(self, few_shot, test_ex):
+    #     base_prompt = "".join(
+    #         [self._format_example(e) for e in few_shot]
+    #     ) + self._format_example(test_ex, include_answer=False)
 
-        # Zero-shot CoT 추가
-        if self.prompting_strategy == "zero_shot_cot" and self.num_shots == 0:
-            base_prompt += " Let's think step by step."
+    #     # Zero-shot CoT 추가
+    #     if self.prompting_strategy == "zero_shot_cot" and self.num_shots == 0:
+    #         base_prompt += " Let's think step by step."
 
-        return base_prompt
+    #     return base_prompt
     
-    
+    # ----- CoT 조건 추가(단일 또는 다수 실행할 때) --
     def _make_prompt(self, few_shot, test_ex):
         base_prompt = "".join(
             [self._format_example(e) for e in few_shot]
