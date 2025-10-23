@@ -26,7 +26,7 @@ client = Client()
 ####################################
 
 # --- 1. JSON 파일 로드 ---
-json_file_name = "kmmlu_fewshot_SOLAR-10.7B-Instruct-v1.0.json"
+json_file_name = "kmmlu_fewshot_COT_SOLAR-10.7B-Instruct-v1.0.json"
 try:
     with open(json_file_name, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -35,12 +35,12 @@ except FileNotFoundError:
     exit()
 
 # Run 설정
-RUNNER_INITIAL = "IYSI"  # 이름 이니셜
-CURRENT_DATE = datetime.now()
+RUNNER_INITIAL = "YS"  # 이름 이니셜
+CURRENT_DATE = "251022"
 MODEL_VERSION = data["model_id"].split("/")[-1]
 
 run_name = f"{CURRENT_DATE}-{RUNNER_INITIAL}-{MODEL_VERSION}"
-tags_for_run = ["K-MMLU-Evaluation", "Baseline", "Random-5Shot"]
+tags_for_run = ["K-MMLU-Eval", "Random-5Shot", "sdf"]
 
 # run_name을 기반으로 UUID 생성
 run_id = uuid.uuid5(uuid.NAMESPACE_DNS, run_name)
@@ -66,7 +66,8 @@ try:
             project_name="K-MMLU-Refined",
             inputs={
                 "model_id": data["model_id"],
-                "date": data["date"],
+                # "date": data["date"],
+                "evaluation_date": data.get("evaluation_date", "unknown_date"),
                 "seed": data["experiment_config"]["seed"],
                 "batch_size": data["experiment_config"]["batch_size"],
                 "num_shots": data["experiment_config"]["num_shots"],
