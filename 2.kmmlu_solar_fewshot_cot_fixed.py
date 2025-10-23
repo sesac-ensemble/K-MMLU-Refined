@@ -126,6 +126,7 @@ class KMMLUEvaluator:
     #     prompt += self._format_example(test_ex, include_answer=False)
     #     return prompt
 
+    # ----- CoT 조건 추가(1개 텍스트만 실행할 때) --
     def _make_prompt(self, few_shot, test_ex):
         base_prompt = "".join(
             [self._format_example(e) for e in few_shot]
@@ -136,6 +137,50 @@ class KMMLUEvaluator:
             base_prompt += " Let's think step by step."
 
         return base_prompt
+    
+    
+    def _make_prompt(self, few_shot, test_ex):
+        base_prompt = "".join(
+            [self._format_example(e) for e in few_shot]
+        ) + self._format_example(test_ex, include_answer=False)
+
+        # 여러 CoT 문장을 무작위 추가
+        if self.prompting_strategy == "zero_shot_cot" and self.num_shots == 0:
+            cot_phrases = [
+                "Let’s think step by step."
+                "First, let’s read the question carefully."
+                "Let’s break this problem down into smaller steps."
+                "Let’s identify the key requirement of the question."
+                "Let’s think through this logically."
+                "Let’s reason through this realistically and step by step."
+                "First, we need to understand what the question is asking."
+                "Let’s start by identifying the essential elements of the question."
+                "We need to distinguish between what the question requires and the background explanation."
+                "Can we divide this problem into simpler components?"
+                "Let’s break it down into smaller, manageable parts and organize them."
+                "Let’s clarify our assumptions step by step to solve the problem."
+                # "Let's think step by step.",
+                # "First, let's understand the question clearly.",
+                # "We can solve this by analyzing each option.",
+                # "Let’s reason this out carefully.",
+                # "Let’s eliminate incorrect choices one by one.",
+                # "What is the question really asking?",
+                # "Let’s recall relevant knowledge.",
+                # "Let’s consider all possibilities before choosing.",
+                # "Let’s break this down logically.",
+                # "Let’s approach this methodically."
+            ]
+
+        # 방법 1: 랜덤하게 하나만 추가
+        # base_prompt += " " + random.choice(cot_phrases)
+
+        # 방법 2: 여러 문장을 함께 추가 (더 자연스러운 프롬프트 생성 가능)
+            base_prompt += "\n" + "\n".join(cot_phrases[:10])  # 원하는 개수만큼 추가
+
+        return base_prompt
+
+
+
 
     # -----------------------------
     def _extract_answer_index(self, ex):
@@ -418,7 +463,7 @@ def main():
     parser.add_argument(
         "--model_id",
         type=str,
-        default="Bllossom/llama-3.2-Korean-Bllossom-3B",
+        default="Qwen/Qwen2.5-7B-Instruct",
         help="평가할 HuggingFace 모델 ID",
     )
     parser.add_argument(
@@ -482,13 +527,15 @@ if __name__ == "__main__":
     main()
 
 
-# python kmmlu_evaluator.py
-# python kmmlu_evaluator.py --model_id "your-username/your-finetuned-model"
-# python kmmlu_evaluator.py --batch_size 2  # 메모리 부족 시
-# python kmmlu_evaluator.py --batch_size 8  # 메모리 충분 시
-# python kmmlu_evaluator.py --output_prefix "baseline_v1"
+
+# python 2.kmmlu_solar_fewshot_only.py
+# python 2.kmmlu_solar_fewshot_only.py
+# python 2.kmmlu_solar_fewshot_only.py --model_id "your-username/your-finetuned-model"
+# python 2.kmmlu_solar_fewshot_only.py --batch_size 2  # 메모리 부족 시
+# python 2.kmmlu_solar_fewshot_only.py --batch_size 8  # 메모리 충분 시
+# python 2.kmmlu_solar_fewshot_only.py --output_prefix "baseline_v1"
 # # 결과: kmmlu_baseline_v1.csv, kmmlu_baseline_v1_summary.json
-# python kmmlu_evaluator.py --seed 123
+# python 2.kmmlu_solar_fewshot_only.py --seed 123
 # # compare_models.sh
-# python kmmlu_evaluator.py --model_id "Bllossom/llama-3.2-Korean-Bllossom-3B" --output_prefix "baseline"
-# python kmmlu_evaluator.py --model_id "your-username/finetuned-model" --output_prefix "finetuned"
+# python 2.kmmlu_solar_fewshot_only.py --model_id "Qwen/Qwen2.5-7B-Instruct" --output_prefix "baseline"
+# python 2.kmmlu_solar_fewshot_only.py --model_id "your-username/finetuned-model" --output_prefix "finetuned"
