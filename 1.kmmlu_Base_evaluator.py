@@ -13,6 +13,7 @@ from datasets import load_dataset
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
 from datetime import datetime
 import json
+from typing import Dict
 
 
 class KMMLUEvaluator:
@@ -32,6 +33,7 @@ class KMMLUEvaluator:
         output_prefix: str = None,
         num_shots: int = 0,
         prompting_strategy: str = "zero-shot",
+        test_subsets: list = None,
     ):
         """모델 초기화 및 로더 세팅"""
         self.model_id = model_id
@@ -40,6 +42,7 @@ class KMMLUEvaluator:
         self.output_prefix = output_prefix or self._generate_output_prefix()
         self.num_shots = num_shots
         self.prompting_strategy = prompting_strategy
+        self.test_subsets = test_subsets
 
         # def __init__(self, model_id: str, batch_size: int = 4, seed: int = 42, output_prefix: str = None):
         #     """모델 초기화 및 로더 세팅"""
@@ -55,7 +58,8 @@ class KMMLUEvaluator:
             torch.cuda.manual_seed_all(seed)
 
         self.tokenizer, self.model = self._load_model()
-        self.subsets = self._get_official_subsets()
+        all_subsets = self._get_official_subsets()
+        self.subsets = all_subsets if test_subsets is None else test_subsets
         self.supercategories = self._get_supercategories()
         # 숫자/문자 정답 모두 대응 (안전 매핑)
         self.letter_map: Dict[str, int] = {
@@ -449,8 +453,8 @@ def main():
     )
 
     args = parser.parse_args()
-
-    test_subsets = args.test_subsets.split(",") if args.test_subsets else None
+    
+    test_subsets_list = args.test_subsets.split(",") if args.test_subsets else None
 
     evaluator = KMMLUEvaluator(
         model_id=args.model_id,
@@ -459,7 +463,7 @@ def main():
         num_shots=args.num_shots,
         prompting_strategy=args.prompting_strategy,
         output_prefix=args.output_prefix,
-        test_subsets=args.test_subsets,
+        test_subsets=test_subsets_list,
     )
 
     evaluator.evaluate()
