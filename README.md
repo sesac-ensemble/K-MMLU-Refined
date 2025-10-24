@@ -30,10 +30,10 @@
   - few-shot 또는 zero-shot 조건 설정 가능
   - 평가 결과 저장
 
-## 4. kmmlu_Qwen2.5_7B_instruct_kowikiQA.py
+## 4. kmmlu_Qwen2.5_7B_instruct_sft_kmmlu
 
 - 평가 방식: 
-  - (1) KoWikiQA 기반 SFT (선택사항)
+  - (1) KMMLU HUMSS subset 기반 SFT
   - (2) KMMLU Few-shot 평가
 - 모델: Qwen2.5-7B (Unsloth 최적화)
 - 기법:
@@ -42,8 +42,9 @@
   - LoRA (Low-Rank Adaptation)
   - 4-bit 양자화
 - 주요 기능:
-  - KoWikiQA 데이터로 SFT 가능
-  - 평가 split 자동 fallback
+  - KMMLU HUMSS 데이터로 SFT 가능
+  - KMMLU HUMSS 만 학습, 평가 가능
+  - KMMLU HUMSS 만 학습, KMMLU 전체 데이터셋 평가 가능
   - 수동 few-shot 예시 지정 옵션 제공
 
 ## 5. kmmlu_Qwen2.5_7B_instruct_zeorcot_DPO.py

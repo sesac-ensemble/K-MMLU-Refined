@@ -1,16 +1,15 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# 3.kmmlu_solar_kowikiQA.py
+# 4.kmmlu_Qwen2.5_7B_instruct_5shot_sft.py
 
 # -------------------------------------------------------------
-# - KoWikiQA SFT(옵션) + KMMLU Few-shot 평가 통합 스크립트
+# -  dataset+ KMMLU Few-shot 평가 통합 스크립트
 # - Unsloth FastLanguageModel + LoRA + 4bit 양자화 지원
 # - 평가 정확도: all_correct / all_total (안전 분모 체크)
 # - KMMLU 45개 subset / 4개 supercategory 매핑
 # - Few-shot: --use_manual_fewshots (기본 False → subset의 dev에서 5개 랜덤)
-# - KoWikiQA 학습: 모든 train split 병합 + --max_train_samples 제한
-# - Robust: tokenizer pad/eos 자동 처리, FlashAttention2 fallback, bf16 감지,
-#           데이터 필드/토큰 인덱싱 안전 처리
+# - 학습: 모든 train split 병합 + --max_train_samples 제한
+# -
 # -------------------------------------------------------------
 
 import os
@@ -31,14 +30,19 @@ from peft import LoraConfig
 from unsloth import FastLanguageModel
 
 
-class KoWikiQA2KMMLU:
-    """KoWikiQA + KMMLU 통합 Evaluator
-
+class dataset_KMMLU:
+    """데이터셋 + KMMLU 통합 Evaluator
     기능:
-      - (옵션) KoWikiQA 데이터셋으로 LoRA 기반 SFT 수행
+      - (옵션) KoWikiQA , KMMLU 데이터셋으로 LoRA 기반 SFT 수행
       - KMMLU 45개 subset Few-shot 평가 (5-shot)
-      - supercategory별 평균/전체 평균 계산, CSV/JSON 저장
+      - (default)supercategory별 평균/전체 평균 계산, CSV/JSON 저장
+      - --eval_subsets humss 사용 시 11개의 HUMSS subset 자동 설정
     """
+    HUMSS_SUBSETS = [
+        "Accounting", "Criminal-Law", "Economics", "Education",
+        "Law", "Management", "Political-Science-and-Sociology",
+        "Psychology", "Social-Welfare", "Taxation", "Korean-History"
+    ]
 
     def __init__(
         self,
@@ -52,6 +56,7 @@ class KoWikiQA2KMMLU:
         num_shots: int = 5,
         output_dir: str = "results",
         output_prefix: str = None,
+        eval_subsets: list = None,
     ):
         """모델/데이터 환경 초기화 및 로더 준비"""
         self.model_id = model_id
@@ -66,6 +71,18 @@ class KoWikiQA2KMMLU:
         self.output_prefix = output_prefix or self._generate_output_prefix()
         self.prompting_strategy = "manual" if self.use_manual_fewshots else "random"
 
+        # KMMLU 평가용 subset / 상위카테고리
+        # self.subsets = self._get_official_subsets()
+        
+        # 평가 대상 subset 지정
+        if eval_subsets == ["humss"]:
+            self.subsets = self.HUMSS_SUBSETS
+        else:
+            self.subsets = eval_subsets or self._get_official_subsets()
+            
+        # KMMLU의 상위 카테고리 매핑
+        self.supercategories = self._get_supercategories()
+
         random.seed(seed)
         torch.manual_seed(seed)
         if torch.cuda.is_available():
@@ -73,10 +90,6 @@ class KoWikiQA2KMMLU:
 
         # 모델/토크나이저 로드 + 속도 최적화
         self.model, self.tokenizer = self._load_model()
-
-        # KMMLU 평가용 subset / 상위카테고리
-        self.subsets = self._get_official_subsets()
-        self.supercategories = self._get_supercategories()
 
         # 숫자/문자 정답 모두 대응 (안전 매핑)
         self.letter_map: Dict[str, int] = {
@@ -138,30 +151,68 @@ class KoWikiQA2KMMLU:
         return model, tokenizer
 
     # -----------------------------
-    def train_on_kowikiQA(self):
-        """KoWikiQA 데이터셋 기반 SFT (LoRA) 학습"""
-        print("\nKoWikiQA 데이터셋 로딩 중...")
-        ds = load_dataset(self.dataset_id)
+    def train_on_kmmlu(self):
+        """데이터셋 기반 SFT (LoRA) 학습"""
+        print("\n데이터셋 로딩 중...")
+        # 전체 데이터셋 로딩
+        # ds = load_dataset(self.dataset_id)
 
         # 모든 train split 병합 (향후 train-1, train-2 등의 분할에도 대응)
-        trains = [ds[k] for k in ds.keys() if "train" in k.lower()] or [
-            ds[k] for k in ds.keys()
+        # trains = [ds[k] for k in ds.keys() if "train" in k.lower()] or [
+        #     ds[k] for k in ds.keys()
         ]
-        merged = concatenate_datasets(trains) if len(trains) > 1 else trains[0]
+        # merged = concatenate_datasets(trains) if len(trains) > 1 else trains[0]
+        humss_subsets = self.HUMSS_SUBSETS
+
+        datasets = []
+        for subset in humss_subsets:
+            print(f"  - {subset} loading...")
+            try:
+                ds = load_dataset(self.dataset_id, subset)
+                if "train" in ds:
+                    datasets.append(ds["train"])
+                else:
+                    print(f"{subset}에 train split 없음 → skip")
+            except Exception as e:
+                print(f"{subset} 로딩 실패: {e}")
+
+        if not datasets:
+            print("학습 가능한 subset이 없습니다. 데이터를 확인해주세요.")
+            return
+
+        # HUMSS subset만 데이터셋으로 합치기
+        merged = concatenate_datasets(datasets)
+
         use_n = min(self.max_train_samples, len(merged))
         train_ds = merged.select(range(use_n))
         print(f"학습 데이터 개수: {len(train_ds)} 사용")
 
-        # instruction / output → text 필드로 포맷팅
-        def to_text(ex):
-            q = str(ex.get("instruction", "")).strip()
-            a = str(ex.get("output", "")).strip()
-            return {"text": f"질문: {q}\n답변: {a}"}
+        # kowikiQA 데이터셋 기준: instruction / output → text 필드로 포맷팅
+        # def to_text(ex):
+        #     q = str(ex.get("instruction", "")).strip()
+        #     a = str(ex.get("output", "")).strip()
+        #     return {"text": f"질문: {q}\n답변: {a}"}
 
+        # KMMLU데이터셋 기반 훈련 시 --------
+        def to_text(ex):
+            q = str(ex.get("question", "")).strip()
+            choices = "\n".join(
+                f"{opt}. {str(ex.get(opt, '')).strip()}" for opt in ["A", "B", "C", "D"]
+            )
+            a_idx = ex.get("answer", "").strip()
+            try:
+                a_idx = int(a_idx) - 1
+                answer = ["A", "B", "C", "D"][a_idx]
+            except:
+                answer = ""
+            return {"text": f"문제: {q}\n{choices}\n정답: {answer}"}
+
+        # ------------------------------------
         keep_cols = ["text"]
         train_ds = train_ds.map(
             to_text,
             remove_columns=[c for c in train_ds.column_names if c not in keep_cols],
+            batched=False,  # 또는 생략 (기본값 False지만 명시 추천)
         )
 
         # LoRA 설정 (경량 파인튜닝)
@@ -186,7 +237,7 @@ class KoWikiQA2KMMLU:
 
         # 학습 설정
         args = TrainingArguments(
-            output_dir=os.path.join(self.output_dir, "lora_kowikiQA"),
+            output_dir=os.path.join(self.output_dir, "lora_kmmlu"),
             num_train_epochs=1,
             per_device_train_batch_size=1,
             gradient_accumulation_steps=4,
@@ -216,7 +267,7 @@ class KoWikiQA2KMMLU:
         trainer.save_model(save_path)
         print(f"SFT 학습 완료 및 모델 저장: {save_path}")
 
-        # trainer.save_model(os.path.join(self.output_dir, "lora_kowikiQA"))
+        # trainer.save_model(os.path.join(self.output_dir, "lora_kmmlu"))
         # print("SFT 학습 완료 및 LoRA 가중치 저장 완료")
 
     # -----------------------------
@@ -478,7 +529,7 @@ class KoWikiQA2KMMLU:
 
         # CSV 파일 저장
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        csv_path = os.path.join(self.output_dir, f"kowikiQA_KMMLU_eval_{ts}.csv")
+        csv_path = os.path.join(self.output_dir, f"dataset_KMMLU_eval_{ts}.csv")
         df.to_csv(csv_path, index=False, encoding="utf-8-sig")
 
         # 상세 JSON 저장 (요약 + 세부정보 통합)
@@ -630,11 +681,11 @@ class KoWikiQA2KMMLU:
 
 def main():
     """명령행 인자 파서 및 실행 진입점"""
-    parser = argparse.ArgumentParser(description="KoWikiQA SFT + KMMLU 평가 (Few-shot)")
+    parser = argparse.ArgumentParser(description="Dataset SFT + KMMLU 평가 (Few-shot)")
+    parser.add_argument("--model_id", type=str, default="Qwen2.5_7B_instruct")
     parser.add_argument(
-        "--model_id", type=str, default="Qwen2.5_7B_instruct"
-    )
-    parser.add_argument("--dataset_id", type=str, default="maywell/ko_wikidata_QA")
+        "--dataset_id", type=str, default="maywell/ko_wikidata_QA"
+    )  # 기존: maywell/ko_wikidata_QA
     parser.add_argument("--batch_size", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
@@ -653,10 +704,19 @@ def main():
     parser.add_argument(
         "--output_dir", type=str, default="results", help="결과 저장 디렉토리"
     )
+    parser.add_argument(
+        "--eval_subsets",
+        nargs="+",
+        type=str,
+        default=None,
+        help="평가할 subset 이름 (예: --eval_subsets humss 또는 Accounting Criminal-Law)",
+    )
+
+
 
     args = parser.parse_args()
 
-    evaluator = KoWikiQA2KMMLU(
+    evaluator = dataset_KMMLU(
         model_id=args.model_id,
         dataset_id=args.dataset_id,
         batch_size=args.batch_size,
@@ -670,7 +730,7 @@ def main():
 
     # eval_only 옵션이 없으면 SFT → 평가, 있으면 평가만
     if not args.eval_only:
-        evaluator.train_on_kowikiQA()
+        evaluator.train_on_kmmlu()
     evaluator.evaluate()
 
 
@@ -679,21 +739,18 @@ if __name__ == "__main__":
     main()
 
     # 예시 실행:
-    # 1) KoWikiQA SFT + KMMLU 평가 전체 수행
-    #    python 3.kmmlu_solar_kowikiQA.py \
-    #        --model_id upstage/SOLAR-10.7B-Instruct-v1.0 \
-    #        --dataset_id maywell/ko_wikidata_QA
-    #
-    # 2) 평가만 수행 (SFT 생략)
-    #    python 3.kmmlu_solar_kowikiQA.py --eval_only
+    # 1) 평가만 수행 (SFT 생략)
+    #    python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_only
     #
     #
-    # 3) 학습된 모델(results/lora_kowikiQA/에 저장됨)을 불러와서 평가만 수행
-    # python 3.kmmlu_solar_kowikiQA_opt4_fixed.py \
-    #   --model_id results/lora_kowikiQA \
-    #   --eval_only
+    # 2) 학습된 모델을 불러와서 평가 시
+    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py \
+    #   --model_id results/lora_ft_Qwen2.5-7B-Instruct \
+    #   --eval_only \
+    #   --eval_subsets humss
     #
-    # 한 줄로 : python 3.kmmlu_solar_kowikiQA_opt4_fixed.py --model_id results/lora_kowikiQA --eval_only
-    # 한 줄로 : nohup python 3.kmmlu_solar_kowikiQA_opt4_fixed.py --model_id results/lora_kowikiQA --eval_only > kmmlu_eval.log 2>&1 &
+    # 3) 전체 45개 subset 평가
+    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_only
     #
-    #
+    # 4) HUMSS만 평가
+    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_only --eval_subsets humss
