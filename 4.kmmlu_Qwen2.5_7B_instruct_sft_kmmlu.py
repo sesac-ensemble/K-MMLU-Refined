@@ -100,6 +100,15 @@ class dataset_KMMLU:
         # 모델/토크나이저 로드 + 속도 최적화
         self.model, self.tokenizer = self._load_model()
 
+        # LoRA 가중치 자동 로딩: 평가 전용 경로인 경우 적용
+        adapter_config_path = os.path.join(self.model_id, "adapter_config.json")
+        if os.path.exists(adapter_config_path):
+            try:
+                self.model = PeftModel.from_pretrained(self.model, self.model_id)
+                print(f"LoRA 가중치 적용 완료: {self.model_id}")
+            except Exception as e:
+                print(f"LoRA 가중치 로딩 실패: {e}")
+
         # 숫자/문자 정답 모두 대응 (안전 매핑)
         self.letter_map: Dict[str, int] = {
             "A": 0,
@@ -745,21 +754,20 @@ if __name__ == "__main__":
     main()
 
     # 예시 실행:
-    # 1) 평가만 수행 (SFT 생략)
-    #    python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_only
+    # 1) 훈련 + 평가 실시
+    #    python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py
     #
     #
-    # 2) 학습된 모델을 불러와서 평가 시
+    # 2) 학습된 모델을 불러와서 humss만 평가(학습과 평가를 따로 진행할 때)
     # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py \
     #   --model_id results/lora_ft_Qwen2.5-7B-Instruct \
     #   --eval_only \
     #   --eval_subsets humss
     #
-    # 3) 전체 45개 subset 평가
+    # 3) 학습(SFT)은 건너뛰고, 평가만 수행(전체 45개 subset)
     # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_only
     #
-    # 4) HUMSS만 평가
+    # 4) 학습(SFT)을 건너뛰고, 평가만 수행(HUMSS 관련 11개 subset)
     # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_only --eval_subsets humss
     #
-    # 5) 훈련 후 humss만 평가
-    #  python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_subsets humss
+    #
