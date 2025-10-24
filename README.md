@@ -1,6 +1,6 @@
 # KMMLU 평가 스크립트 요약
 
-## 1. 1.kmmlu_Base_evaluator.py
+## 1. kmmlu_Base_evaluator.py
 
 - 평가 방식: Zero-shot
 - 모델: HuggingFace 기반 LLM
@@ -10,7 +10,7 @@
   - 분야별(supercategory) 및 전체 정확도 계산
   - 출력: CSV, JSON 저장
 
-## 2. 2.kmmlu_Qwen2.5_7B_instruct_fewshot.py
+## 2. kmmlu_Qwen2.5_7B_instruct_fewshot.py
 
 - 평가 방식: Few-shot (5-shot)
 - 모델: Qwen2.5-7B-Instruct
@@ -20,7 +20,7 @@
   - KMMLU 45개 subset 평가
   - 정확도 출력 및 저장
 
-## 3. 3.kmmlu_Qwen2.5_7B_instruct_fewshot_cot_fixed.py
+## 3. kmmlu_Qwen2.5_7B_instruct_fewshot_cot_fixed.py
 
 - 평가 방식: Zero-shot CoT (Chain of Thought)
 - 모델: Qwen2.5-7B-Instruct
@@ -30,7 +30,7 @@
   - few-shot 또는 zero-shot 조건 설정 가능
   - 평가 결과 저장
 
-## 4. 4.kmmlu_Qwen2.5_7B_instruct_kowikiQA.py
+## 4. kmmlu_Qwen2.5_7B_instruct_kowikiQA.py
 
 - 평가 방식: 
   - (1) KoWikiQA 기반 SFT (선택사항)
@@ -46,7 +46,7 @@
   - 평가 split 자동 fallback
   - 수동 few-shot 예시 지정 옵션 제공
 
-## 5. 5.kmmlu_Qwen2.5_7B_instruct_zeorcot_DPO.py
+## 5. kmmlu_Qwen2.5_7B_instruct_zeorcot_DPO.py
 
 - 평가 방식: Zero-shot CoT
 - 모델: Qwen2.5-7B-Instruct
@@ -57,7 +57,7 @@
 - 주요 기능:
   - zero-shot CoT 평가
   - CoT 프롬프트에 여러 reasoning 문장 삽입
-  - DPO 모델을 백업하여 저장
+  - DPO 모델을 백업하여 저장(DPO 모델학습은 별도 코드로 진행)
 
 ## 기법 요약표
 
