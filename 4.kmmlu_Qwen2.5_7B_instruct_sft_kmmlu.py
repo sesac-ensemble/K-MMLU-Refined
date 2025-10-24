@@ -246,7 +246,7 @@ class dataset_KMMLU:
         # 학습 설정
         args = TrainingArguments(
             output_dir=os.path.join(self.output_dir, "lora_kmmlu"),
-            num_train_epochs=1,
+            num_train_epochs=5,  # 기본 1에서 변경 가능
             per_device_train_batch_size=1,
             gradient_accumulation_steps=4,
             learning_rate=2e-5,
@@ -702,7 +702,7 @@ def main():
     parser.add_argument(
         "--max_train_samples",
         type=int,
-        default=10000,
+        default=None,  # 전체 학습 개별 적용시 1000 과 같이 적용 가능
         help="SFT 학습에 사용할 최대 샘플 수",
     )
     parser.add_argument("--num_shots", type=int, default=5, help="few-shot 예시 개수")
@@ -760,3 +760,6 @@ if __name__ == "__main__":
     #
     # 4) HUMSS만 평가
     # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_only --eval_subsets humss
+    #
+    # 5) 훈련 후 humss만 평가
+    #  python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_subsets humss
