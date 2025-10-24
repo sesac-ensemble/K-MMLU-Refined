@@ -142,8 +142,8 @@ class dataset_KMMLU:
             )
         except Exception:
             bf16_ok = False
-        dtype = torch.bfloat16 if bf16_ok else torch.float16
-
+        # dtype = torch.bfloat16 if bf16_ok else torch.float16
+        dtype = torch.bfloat16 if torch.cuda.is_bf16_supported() else torch.float16
         model, tokenizer = FastLanguageModel.from_pretrained(
             model_name=self.model_id,
             max_seq_length=4096,
@@ -200,7 +200,13 @@ class dataset_KMMLU:
         # HUMSS subset만 데이터셋으로 합치기
         merged = concatenate_datasets(datasets)
 
-        use_n = min(self.max_train_samples, len(merged))
+        # use_n = min(self.max_train_samples, len(merged))
+        # self.max_train_samples가 None이면 전체 데이터 사용
+        use_n = (
+            len(merged)
+            if self.max_train_samples is None
+            else min(self.max_train_samples, len(merged))
+        )
         train_ds = merged.select(range(use_n))
         print(f"학습 데이터 개수: {len(train_ds)} 사용")
 
@@ -216,7 +222,8 @@ class dataset_KMMLU:
             choices = "\n".join(
                 f"{opt}. {str(ex.get(opt, '')).strip()}" for opt in ["A", "B", "C", "D"]
             )
-            a_idx = ex.get("answer", "").strip()
+            # int가 아닌 문자열로 감싸줌.
+            a_idx = str(ex.get("answer", "")).strip()
             try:
                 a_idx = int(a_idx) - 1
                 answer = ["A", "B", "C", "D"][a_idx]
@@ -263,6 +270,9 @@ class dataset_KMMLU:
             logging_steps=10,
             save_steps=1000,
             report_to="none",
+            fp16=False,  # 추가
+            bf16=True,  # 추가
+            optim="adamw_torch_fused",  # 또는 adamw_hf
         )
 
         # SFTTrainer는 text 단일 필드를 사용하여 SFT 수행
