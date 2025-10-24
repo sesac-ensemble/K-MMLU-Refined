@@ -16,11 +16,11 @@
 - 모델: Qwen2.5-7B-Instruct
 - 기법: 4-bit QLoRA
 - 주요 기능:
-  - train/dev split에서 few-shot 예시 추출
+  - train에서 few-shot 예시 추출
   - KMMLU 45개 subset 평가
   - 정확도 출력 및 저장
 
-## 3. kmmlu_Qwen2.5_7B_instruct_fewshot_cot_fixed.py
+## 3. kmmlu_Qwen2.5_7B_instruct_fewshot_cot.py
 
 - 평가 방식: Zero-shot CoT (Chain of Thought)
 - 모델: Qwen2.5-7B-Instruct
