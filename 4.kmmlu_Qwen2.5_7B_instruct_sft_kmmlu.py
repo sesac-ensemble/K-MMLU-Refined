@@ -38,10 +38,19 @@ class dataset_KMMLU:
       - (default)supercategory별 평균/전체 평균 계산, CSV/JSON 저장
       - --eval_subsets humss 사용 시 11개의 HUMSS subset 자동 설정
     """
+
     HUMSS_SUBSETS = [
-        "Accounting", "Criminal-Law", "Economics", "Education",
-        "Law", "Management", "Political-Science-and-Sociology",
-        "Psychology", "Social-Welfare", "Taxation", "Korean-History"
+        "Accounting",
+        "Criminal-Law",
+        "Economics",
+        "Education",
+        "Law",
+        "Management",
+        "Political-Science-and-Sociology",
+        "Psychology",
+        "Social-Welfare",
+        "Taxation",
+        "Korean-History",
     ]
 
     def __init__(
@@ -73,13 +82,13 @@ class dataset_KMMLU:
 
         # KMMLU 평가용 subset / 상위카테고리
         # self.subsets = self._get_official_subsets()
-        
+
         # 평가 대상 subset 지정
         if eval_subsets == ["humss"]:
             self.subsets = self.HUMSS_SUBSETS
         else:
             self.subsets = eval_subsets or self._get_official_subsets()
-            
+
         # KMMLU의 상위 카테고리 매핑
         self.supercategories = self._get_supercategories()
 
@@ -160,7 +169,6 @@ class dataset_KMMLU:
         # 모든 train split 병합 (향후 train-1, train-2 등의 분할에도 대응)
         # trains = [ds[k] for k in ds.keys() if "train" in k.lower()] or [
         #     ds[k] for k in ds.keys()
-        ]
         # merged = concatenate_datasets(trains) if len(trains) > 1 else trains[0]
         humss_subsets = self.HUMSS_SUBSETS
 
@@ -711,8 +719,6 @@ def main():
         default=None,
         help="평가할 subset 이름 (예: --eval_subsets humss 또는 Accounting Criminal-Law)",
     )
-
-
 
     args = parser.parse_args()
 
