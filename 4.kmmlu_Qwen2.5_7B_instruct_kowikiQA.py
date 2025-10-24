@@ -66,7 +66,6 @@ class KoWikiQA2KMMLU:
         self.output_prefix = output_prefix or self._generate_output_prefix()
         self.prompting_strategy = "manual" if self.use_manual_fewshots else "random"
 
-
         random.seed(seed)
         torch.manual_seed(seed)
         if torch.cuda.is_available():
@@ -208,8 +207,17 @@ class KoWikiQA2KMMLU:
 
         print("\nSFT 학습 시작...")
         trainer.train()
-        trainer.save_model(os.path.join(self.output_dir, "lora_kowikiQA"))
-        print("SFT 학습 완료 및 LoRA 가중치 저장 완료")
+
+        # 모델 저장 (모델명 기반 하위 폴더 생성)
+        save_path = os.path.join(
+            self.output_dir, f"lora_ft_{self.model_id.split('/')[-1]}"
+        )
+        os.makedirs(save_path, exist_ok=True)
+        trainer.save_model(save_path)
+        print(f"SFT 학습 완료 및 모델 저장: {save_path}")
+
+        # trainer.save_model(os.path.join(self.output_dir, "lora_kowikiQA"))
+        # print("SFT 학습 완료 및 LoRA 가중치 저장 완료")
 
     # -----------------------------
     def _normalize(self, text: Any) -> str:
@@ -269,7 +277,7 @@ class KoWikiQA2KMMLU:
     def _get_fewshots(self, subset: str) -> List[Dict[str, Any]]:
         """--use_manual_fewshots 옵션에 따라 few-shot 예시 생성
 
-        기본(False): subset의 dev에서 랜덤 5개, 없으면 validation → test → train
+        기본(False): subset의 train에서 랜덤 5개, 없으면 train → dev
         True: 수동 예시 사용
         """
         manual = [
@@ -318,7 +326,21 @@ class KoWikiQA2KMMLU:
             return manual
 
         ds = load_dataset("HAERAE-HUB/KMMLU", subset)
-        for split in ["dev", "validation", "test", "train"]:
+
+        # "validation", "test" 포함되어있어 주석 처리
+        # for split in ["dev", "validation", "test", "train"]:
+        #     if split in ds:
+        #         data = [
+        #             ex
+        #             for ex in ds[split]
+        #             if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]
+        #         ]
+        #         if data:
+        #             k = min(self.num_shots, len(data))
+        #             return random.sample(data, k)
+        # return manual
+
+        for split in ["train", "dev"]:
             if split in ds:
                 data = [
                     ex
@@ -328,7 +350,10 @@ class KoWikiQA2KMMLU:
                 if data:
                     k = min(self.num_shots, len(data))
                     return random.sample(data, k)
-        return manual
+
+        # train, dev 둘 다 없는 경우 → skip 처리 (manual fallback 제거)
+        print(f"{subset}: train/dev split에 유효한 few-shot 데이터 없음 → skip")
+        return []
 
     # -----------------------------
     def evaluate(self):
@@ -348,6 +373,7 @@ class KoWikiQA2KMMLU:
                     print(f"{subset}: 평가 가능한 split 없음 → skip")
                     continue
 
+                # 정답 필터링 (answer가 1~4인 데이터만 사용)
                 data = [
                     ex
                     for ex in ds[eval_split]
@@ -358,10 +384,15 @@ class KoWikiQA2KMMLU:
                     continue
 
                 fewshots = self._get_fewshots(subset)
+                if not fewshots:  # fewshot 예시가 없으면 skip
+                    print(f"{subset}: few-shot 예시 없음 → skip")
+                    continue
 
+                # Prompt 및 Truth 생성
                 prompts = [self._make_prompt(ex, fewshots) for ex in data]
                 truths = [self._extract_answer_index(ex) for ex in data]
 
+                # Batch 평가
                 correct = total = 0
                 for i in range(0, len(prompts), self.batch_size):
                     batch_prompts = prompts[i : i + self.batch_size]
@@ -384,6 +415,8 @@ class KoWikiQA2KMMLU:
                                 correct += 1
 
                 acc = (correct / total) if total > 0 else 0.0
+
+                # 출력 형식
                 print(f"{subset}: {acc:.4f} ({correct}/{total})")
 
                 results.append(
@@ -599,7 +632,7 @@ def main():
     """명령행 인자 파서 및 실행 진입점"""
     parser = argparse.ArgumentParser(description="KoWikiQA SFT + KMMLU 평가 (Few-shot)")
     parser.add_argument(
-        "--model_id", type=str, default="upstage/SOLAR-10.7B-Instruct-v1.0"
+        "--model_id", type=str, default="Qwen2.5_7B_instruct"
     )
     parser.add_argument("--dataset_id", type=str, default="maywell/ko_wikidata_QA")
     parser.add_argument("--batch_size", type=int, default=2)

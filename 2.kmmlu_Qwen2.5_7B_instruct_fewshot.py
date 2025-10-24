@@ -29,7 +29,7 @@ class KMMLUEvaluator:
         seed: int = 42,
         output_prefix: str = None,
         num_shots: int = 0,
-        prompting_strategy: str = "zero_shot_cot",  # zero_shot_cot 으로 변경해야 CoT가 적용된다.
+        prompting_strategy: str = "few-shot",
     ):
         """모델 초기화 및 few-shot 설정"""
         self.model_id = model_id
@@ -118,24 +118,13 @@ class KMMLUEvaluator:
         return prompt
 
     # -----------------------------
-    # def _make_prompt(self, fewshots, test_ex):
-    #     """few-shot 예시와 테스트 문항을 결합하여 최종 프롬프트 구성"""
-    #     prompt = ""
-    #     for fs in fewshots:
-    #         prompt += self._format_example(fs, include_answer=True)
-    #     prompt += self._format_example(test_ex, include_answer=False)
-    #     return prompt
-
-    def _make_prompt(self, few_shot, test_ex):
-        base_prompt = "".join(
-            [self._format_example(e) for e in few_shot]
-        ) + self._format_example(test_ex, include_answer=False)
-
-        # Zero-shot CoT 추가
-        if self.prompting_strategy == "zero_shot_cot" and self.num_shots == 0:
-            base_prompt += " Let's think step by step."
-
-        return base_prompt
+    def _make_prompt(self, fewshots, test_ex):
+        """few-shot 예시와 테스트 문항을 결합하여 최종 프롬프트 구성"""
+        prompt = ""
+        for fs in fewshots:
+            prompt += self._format_example(fs, include_answer=True)
+        prompt += self._format_example(test_ex, include_answer=False)
+        return prompt
 
     # -----------------------------
     def _extract_answer_index(self, ex):
@@ -170,22 +159,56 @@ class KMMLUEvaluator:
                 dataset = load_dataset("HAERAE-HUB/KMMLU", subset)
 
                 # dev 존재 시 few-shot 추출, 없으면 test 일부 사용
-                if "dev" in dataset:
-                    dev_data = list(dataset["dev"])
-                elif "train" in dataset:
-                    dev_data = random.sample(
-                        list(dataset["train"]),
-                        min(self.num_shots, len(dataset["train"])),
+                # if "dev" in dataset:
+                #     dev_data = list(dataset["dev"])
+                # elif "train" in dataset:
+                #     dev_data = random.sample(
+                #         list(dataset["train"]),
+                #         min(self.num_shots, len(dataset["train"])),
+                #     )
+                # else:
+                #     dev_data = list(dataset["test"][: self.num_shots])
+
+                # ----------------- 아래 수정 ------------------------
+                fewshot_data = []
+
+                if "train" in dataset:
+                    data = [
+                        ex
+                        for ex in dataset["train"]
+                        if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]
+                    ]
+                    if data:
+                        fewshot_data = random.sample(
+                            data, min(self.num_shots, len(data))
+                        )
+
+                elif "dev" in dataset:
+                    data = [
+                        ex
+                        for ex in dataset["dev"]
+                        if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]
+                    ]
+                    if data:
+                        fewshot_data = random.sample(
+                            data, min(self.num_shots, len(data))
+                        )
+
+                # train, dev 둘 다 없으면 skip
+                if not fewshot_data:
+                    print(
+                        f"{subset}: train/dev split에 유효한 few-shot 데이터 없음 → skip"
                     )
-                else:
-                    dev_data = list(dataset["test"][: self.num_shots])
+                    continue
+                # ----------------- 여기까지 수정 ------------------------
 
                 if "test" not in dataset:
                     print(f"{subset}: test split 없음 → skip")
                     continue
                 test_data = list(dataset["test"])
 
-                fewshots = random.sample(dev_data, min(self.num_shots, len(dev_data)))
+                # fewshots = random.sample(dev_data, min(self.num_shots, len(dev_data)))
+                fewshots = fewshot_data
                 prompts = [self._make_prompt(fewshots, t) for t in test_data]
                 truths = [self._extract_answer_index(t) for t in test_data]
 
@@ -418,7 +441,7 @@ def main():
     parser.add_argument(
         "--model_id",
         type=str,
-        default="Bllossom/llama-3.2-Korean-Bllossom-3B",
+        default="Qwen2.5_7B_instruct",
         help="평가할 HuggingFace 모델 ID",
     )
     parser.add_argument(
@@ -442,12 +465,10 @@ def main():
             "meta_prompt",
             "gradient",
             "zero_shot",
-            "zero_shot_cot",
             "self_consistency",
         ],
         help="프롬프트 전략",
     )
-
     parser.add_argument(
         "--output_prefix",
         type=str,
@@ -472,7 +493,7 @@ def main():
         num_shots=args.num_shots,
         prompting_strategy=args.prompting_strategy,
         output_prefix=args.output_prefix,
-        # test_subsets=args.test_subsets,  # 개별 subsets 추론 없이, 전체를 사용하기 위해 주석처리
+        test_subsets=args.test_subsets,
     )
 
     evaluator.evaluate()

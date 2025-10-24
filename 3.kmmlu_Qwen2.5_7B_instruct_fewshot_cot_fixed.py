@@ -137,7 +137,7 @@ class KMMLUEvaluator:
     #         base_prompt += " Let's think step by step."
 
     #     return base_prompt
-    
+
     # ----- CoT 조건 추가(단일 또는 다수 실행할 때) --
     def _make_prompt(self, few_shot, test_ex):
         base_prompt = "".join(
@@ -147,18 +147,18 @@ class KMMLUEvaluator:
         # 여러 CoT 문장을 무작위 추가
         if self.prompting_strategy == "zero_shot_cot" and self.num_shots == 0:
             cot_phrases = [
-                "Let’s think step by step."
-                "First, let’s read the question carefully."
-                "Let’s break this problem down into smaller steps."
-                "Let’s identify the key requirement of the question."
-                "Let’s think through this logically."
-                "Let’s reason through this realistically and step by step."
-                "First, we need to understand what the question is asking."
-                "Let’s start by identifying the essential elements of the question."
-                "We need to distinguish between what the question requires and the background explanation."
-                "Can we divide this problem into simpler components?"
-                "Let’s break it down into smaller, manageable parts and organize them."
-                "Let’s clarify our assumptions step by step to solve the problem."
+                "Let’s think step by step.",
+                "First, let’s read the question carefully.",
+                "Let’s break this problem down into smaller steps.",
+                "Let’s identify the key requirement of the question.",
+                "Let’s think through this logically.",
+                "Let’s reason through this realistically and step by step.",
+                "First, we need to understand what the question is asking.",
+                "Let’s start by identifying the essential elements of the question.",
+                "We need to distinguish between what the question requires and the background explanation.",
+                "Can we divide this problem into simpler components?",
+                "Let’s break it down into smaller, manageable parts and organize them.",
+                "Let’s clarify our assumptions step by step to solve the problem.",
                 # "Let's think step by step.",
                 # "First, let's understand the question clearly.",
                 # "We can solve this by analyzing each option.",
@@ -171,16 +171,13 @@ class KMMLUEvaluator:
                 # "Let’s approach this methodically."
             ]
 
-        # 방법 1: 랜덤하게 하나만 추가
-        # base_prompt += " " + random.choice(cot_phrases)
+            # 방법 1: 랜덤하게 하나만 추가
+            # base_prompt += " " + random.choice(cot_phrases)
 
-        # 방법 2: 여러 문장을 함께 추가 (더 자연스러운 프롬프트 생성 가능)
+            # 방법 2: 여러 문장을 함께 추가 (더 자연스러운 프롬프트 생성 가능)
             base_prompt += "\n" + "\n".join(cot_phrases[:10])  # 원하는 개수만큼 추가
 
         return base_prompt
-
-
-
 
     # -----------------------------
     def _extract_answer_index(self, ex):
@@ -215,22 +212,56 @@ class KMMLUEvaluator:
                 dataset = load_dataset("HAERAE-HUB/KMMLU", subset)
 
                 # dev 존재 시 few-shot 추출, 없으면 test 일부 사용
-                if "dev" in dataset:
-                    dev_data = list(dataset["dev"])
-                elif "train" in dataset:
-                    dev_data = random.sample(
-                        list(dataset["train"]),
-                        min(self.num_shots, len(dataset["train"])),
+                # if "dev" in dataset:
+                #     dev_data = list(dataset["dev"])
+                # elif "train" in dataset:
+                #     dev_data = random.sample(
+                #         list(dataset["train"]),
+                #         min(self.num_shots, len(dataset["train"])),
+                #     )
+                # else:
+                #     dev_data = list(dataset["test"][: self.num_shots])
+
+                # ----------------- 아래 수정 ------------------------
+                fewshot_data = []
+
+                if "train" in dataset:
+                    data = [
+                        ex
+                        for ex in dataset["train"]
+                        if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]
+                    ]
+                    if data:
+                        fewshot_data = random.sample(
+                            data, min(self.num_shots, len(data))
+                        )
+
+                elif "dev" in dataset:
+                    data = [
+                        ex
+                        for ex in dataset["dev"]
+                        if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]
+                    ]
+                    if data:
+                        fewshot_data = random.sample(
+                            data, min(self.num_shots, len(data))
+                        )
+
+                # train, dev 둘 다 없으면 skip
+                if not fewshot_data:
+                    print(
+                        f"{subset}: train/dev split에 유효한 few-shot 데이터 없음 → skip"
                     )
-                else:
-                    dev_data = list(dataset["test"][: self.num_shots])
+                    continue
+                # ----------------- 여기까지 수정 ------------------------
 
                 if "test" not in dataset:
                     print(f"{subset}: test split 없음 → skip")
                     continue
                 test_data = list(dataset["test"])
 
-                fewshots = random.sample(dev_data, min(self.num_shots, len(dev_data)))
+                # fewshots = random.sample(dev_data, min(self.num_shots, len(dev_data)))
+                fewshots = fewshot_data
                 prompts = [self._make_prompt(fewshots, t) for t in test_data]
                 truths = [self._extract_answer_index(t) for t in test_data]
 
@@ -525,7 +556,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-
 
 
 # python 2.kmmlu_solar_fewshot_only.py

@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# 2.kmmlu_solar_fewshot_only.py
+# 4.kmmlu_solar_DPO_CoT_unslothQwen2.5_instruct.py
 
 import torch
 import pandas as pd
@@ -15,9 +15,9 @@ import json
 
 
 class KMMLUEvaluator:
-    """KMMLU Few-shot Evaluator
+    """KMMLU zeor-shot CoT+DPO Evaluator
     --------------------------------
-    - KMMLU 45개 subset 각각에 대해 5-shot few-shot 프롬프트 평가를 수행합니다.
+    - KMMLU 45개 subset 각각에 대해 0-shot few-shot 프롬프트 평가를 수행합니다.
     - dev split에서 few-shot 예시를 추출하며, 존재하지 않으면 test 일부를 사용합니다.
     - 분야별(supercategory) 평균, 전체 평균을 함께 계산하며 CSV/JSON으로 저장합니다.
     """
@@ -25,11 +25,11 @@ class KMMLUEvaluator:
     def __init__(
         self,
         model_id: str,
-        batch_size: int = 4,
+        batch_size: int = 2,
         seed: int = 42,
         output_prefix: str = None,
         num_shots: int = 0,
-        prompting_strategy: str = "few-shot",
+        prompting_strategy: str = "zero_shot_cot",  # zero_shot_cot 으로 변경해야 CoT가 적용된다.
     ):
         """모델 초기화 및 few-shot 설정"""
         self.model_id = model_id
@@ -95,6 +95,14 @@ class KMMLUEvaluator:
         )
         model.eval()
         print("모델 로딩 완료.\n")
+
+        # 로드된 모델을 ./results 폴더에 저장
+        save_path = f"./results/zero_shot_cot_{self.model_id.split('/')[-1]}"
+        os.makedirs(save_path, exist_ok=True)
+        model.save_pretrained(save_path)
+        tokenizer.save_pretrained(save_path)
+        print(f"Zero-shot CoT 모델 백업 완료: {save_path}\n")
+
         return tokenizer, model
 
     # -----------------------------
@@ -118,13 +126,66 @@ class KMMLUEvaluator:
         return prompt
 
     # -----------------------------
-    def _make_prompt(self, fewshots, test_ex):
-        """few-shot 예시와 테스트 문항을 결합하여 최종 프롬프트 구성"""
-        prompt = ""
-        for fs in fewshots:
-            prompt += self._format_example(fs, include_answer=True)
-        prompt += self._format_example(test_ex, include_answer=False)
-        return prompt
+    # def _make_prompt(self, fewshots, test_ex):
+    #     """few-shot 예시와 테스트 문항을 결합하여 최종 프롬프트 구성"""
+    #     prompt = ""
+    #     for fs in fewshots:
+    #         prompt += self._format_example(fs, include_answer=True)
+    #     prompt += self._format_example(test_ex, include_answer=False)
+    #     return prompt
+
+    # ----- CoT 조건 추가(1개 텍스트만 실행할 때) --
+    # def _make_prompt(self, few_shot, test_ex):
+    #     base_prompt = "".join(
+    #         [self._format_example(e) for e in few_shot]
+    #     ) + self._format_example(test_ex, include_answer=False)
+
+    #     # Zero-shot CoT 추가
+    #     if self.prompting_strategy == "zero_shot_cot" and self.num_shots == 0:
+    #         base_prompt += " Let's think step by step."
+
+    #     return base_prompt
+
+    # ----- CoT 조건 추가(단일 또는 다수 실행할 때) --
+    def _make_prompt(self, few_shot, test_ex):
+        base_prompt = "".join(
+            [self._format_example(e) for e in few_shot]
+        ) + self._format_example(test_ex, include_answer=False)
+
+        # 여러 CoT 문장을 무작위 추가
+        if self.prompting_strategy == "zero_shot_cot" and self.num_shots == 0:
+            cot_phrases = [
+                "Let’s think step by step.",
+                "First, let’s read the question carefully.",
+                "Let’s break this problem down into smaller steps.",
+                "Let’s identify the key requirement of the question.",
+                "Let’s think through this logically.",
+                # "Let’s reason through this realistically and step by step.",
+                # "First, we need to understand what the question is asking.",
+                # "Let’s start by identifying the essential elements of the question.",
+                # "We need to distinguish between what the question requires and the background explanation.",
+                # "Can we divide this problem into simpler components?",
+                # "Let’s break it down into smaller, manageable parts and organize them.",
+                # "Let’s clarify our assumptions step by step to solve the problem.",
+                # "Let's think step by step.",
+                # "First, let's understand the question clearly.",
+                # "We can solve this by analyzing each option.",
+                # "Let’s reason this out carefully.",
+                # "Let’s eliminate incorrect choices one by one.",
+                # "What is the question really asking?",
+                # "Let’s recall relevant knowledge.",
+                # "Let’s consider all possibilities before choosing.",
+                # "Let’s break this down logically.",
+                # "Let’s approach this methodically."
+            ]
+
+            # 방법 1: 랜덤하게 하나만 추가
+            # base_prompt += " " + random.choice(cot_phrases)
+
+            # 방법 2: 여러 문장을 함께 추가 (더 자연스러운 프롬프트 생성 가능)
+            base_prompt += "\n" + "\n".join(cot_phrases[:5])  # 원하는 개수만큼 추가
+
+        return base_prompt
 
     # -----------------------------
     def _extract_answer_index(self, ex):
@@ -149,84 +210,123 @@ class KMMLUEvaluator:
         return preds.cpu().tolist()
 
     # -----------------------------
-    def evaluate(self):
-        """KMMLU 전체 subset에 대해 Few-shot 평가 수행"""
-        results, all_correct, all_total = [], 0, 0
-        start_time = datetime.now()
 
-        for subset in tqdm(self.subsets, desc="KMMLU 전체 평가"):
-            try:
-                dataset = load_dataset("HAERAE-HUB/KMMLU", subset)
 
-                # dev 존재 시 few-shot 추출, 없으면 test 일부 사용
-                if "dev" in dataset:
-                    dev_data = list(dataset["dev"])
-                elif "train" in dataset:
-                    dev_data = random.sample(
-                        list(dataset["train"]),
-                        min(self.num_shots, len(dataset["train"])),
+def evaluate(self):
+    """KMMLU 전체 subset 평가 수행 (정확도: all_correct / all_total)"""
+    results, all_correct, all_total = [], 0, 0
+    start_time = datetime.now()
+
+    for subset in tqdm(self.subsets, desc="KMMLU 평가 진행 중"):
+        try:
+            ds = load_dataset("HAERAE-HUB/KMMLU", subset)
+
+            # 평가 split: test 우선, 없으면 validation → dev → train 순
+            eval_split = next(
+                (s for s in ["test", "validation", "dev", "train"] if s in ds), None
+            )
+            if not eval_split:
+                print(f"{subset}: 평가 가능한 split 없음 → skip")
+                continue
+
+            # 정답 필터링 (answer가 1~4인 데이터만 사용)
+            data = [
+                ex
+                for ex in ds[eval_split]
+                if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]
+            ]
+            if not data:
+                print(f"{subset}: 유효한 정답 데이터 없음 → skip")
+                continue
+
+            # few-shot 생성(train → dev 순, test 제외) 및 # 정답 필터링(answer가 1~4인 데이터만 사용)
+            fewshot_data = []
+            if "train" in ds:
+                valid_train = [
+                    ex
+                    for ex in ds["train"]
+                    if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]
+                ]
+                if valid_train:
+                    fewshot_data = random.sample(
+                        valid_train, min(self.num_shots, len(valid_train))
                     )
-                else:
-                    dev_data = list(dataset["test"][: self.num_shots])
+            elif "dev" in ds:
+                valid_dev = [
+                    ex
+                    for ex in ds["dev"]
+                    if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]
+                ]
+                if valid_dev:
+                    fewshot_data = random.sample(
+                        valid_dev, min(self.num_shots, len(valid_dev))
+                    )
 
-                if "test" not in dataset:
-                    print(f"{subset}: test split 없음 → skip")
-                    continue
-                test_data = list(dataset["test"])
+            if not fewshot_data:
+                print(f"{subset}: train/dev split에 유효한 few-shot 데이터 없음 → skip")
+                continue
 
-                fewshots = random.sample(dev_data, min(self.num_shots, len(dev_data)))
-                prompts = [self._make_prompt(fewshots, t) for t in test_data]
-                truths = [self._extract_answer_index(t) for t in test_data]
+            fewshots = fewshot_data
 
-                correct = total = 0
-                for i in tqdm(
-                    range(0, len(prompts), self.batch_size),
-                    desc=f"{subset} 평가 중",
-                    leave=False,
-                ):
-                    batch_prompts = prompts[i : i + self.batch_size]
-                    batch_truths = truths[i : i + self.batch_size]
+            # Prompt 및 Truth 생성
+            prompts = [self._make_prompt(fewshots, ex) for ex in data]
+            truths = [self._extract_answer_index(ex) for ex in data]
 
-                    inputs = self.tokenizer(
-                        batch_prompts,
-                        return_tensors="pt",
-                        padding=True,
-                        truncation=True,
-                        max_length=3072,
-                    ).to(self.model.device)
-                    preds = self._predict_logits(inputs)
+            # Batch 평가
+            correct = total = 0
+            for i in range(0, len(prompts), self.batch_size):
+                batch_prompts = prompts[i : i + self.batch_size]
+                batch_truths = truths[i : i + self.batch_size]
 
-                    for p, t in zip(preds, batch_truths):
-                        if t is not None:
-                            total += 1
-                            if p == t:
-                                correct += 1
+                inputs = self.tokenizer(
+                    batch_prompts,
+                    return_tensors="pt",
+                    padding=True,
+                    truncation=True,
+                    max_length=3072,
+                ).to(self.model.device)
 
-                acc = correct / total if total > 0 else 0.0
-                print(f"  - {subset}: {acc:.4f} ({correct}/{total})")
+                preds = self._predict_logits(inputs)
 
-                results.append(
-                    {
-                        "Subset": subset,
-                        "Category": self.supercategories.get(subset, "N/A"),
-                        "Accuracy": acc,
-                    }
-                )
-                all_correct += correct
-                all_total += total
+                for p, t in zip(preds, batch_truths):
+                    if t is not None:
+                        total += 1
+                        if p == t:
+                            correct += 1
 
-            except Exception as e:
-                print(f"{subset} 오류 발생: {e}")
-                results.append(
-                    {
-                        "Subset": subset,
-                        "Category": self.supercategories.get(subset, "N/A"),
-                        "Accuracy": 0.0,
-                    }
-                )
+            acc = (correct / total) if total > 0 else 0.0
 
-        time_elapsed = datetime.now() - start_time
-        self._summarize(results, all_correct, all_total, time_elapsed)
+            # 출력 형식
+            print(f"{subset}: {acc:.4f} ({correct}/{total})")
+
+            results.append(
+                {
+                    "Subset": subset,
+                    "Category": self.supercategories.get(subset, "N/A"),
+                    "Accuracy": acc,
+                    "Correct": correct,
+                    "Total": total,
+                }
+            )
+
+            all_correct += correct
+            all_total += total
+
+        except Exception as e:
+            # 오류 처리
+            print(f"{subset} 오류 발생: {e}")
+            results.append(
+                {
+                    "Subset": subset,
+                    "Category": self.supercategories.get(subset, "N/A"),
+                    "Accuracy": 0.0,
+                    "Correct": 0,
+                    "Total": 0,
+                }
+            )
+
+    # 결과 요약
+    self._summarize(results, all_correct, all_total, datetime.now() - start_time)
 
     # -----------------------------
     def _summarize(self, results, correct, total, time_elapsed):
@@ -407,7 +507,7 @@ def main():
     parser.add_argument(
         "--model_id",
         type=str,
-        default="Bllossom/llama-3.2-Korean-Bllossom-3B",
+        default="Qwen/Qwen2.5-7B-Instruct",  # 기존 모델: Qwen/Qwen2.5-7B-Instruct
         help="평가할 HuggingFace 모델 ID",
     )
     parser.add_argument(
@@ -431,10 +531,12 @@ def main():
             "meta_prompt",
             "gradient",
             "zero_shot",
+            "zero_shot_cot",
             "self_consistency",
         ],
         help="프롬프트 전략",
     )
+
     parser.add_argument(
         "--output_prefix",
         type=str,
@@ -459,7 +561,7 @@ def main():
         num_shots=args.num_shots,
         prompting_strategy=args.prompting_strategy,
         output_prefix=args.output_prefix,
-        test_subsets=args.test_subsets,
+        # test_subsets=args.test_subsets,  # 개별 subsets 추론 없이, 전체를 사용하기 위해 주석처리
     )
 
     evaluator.evaluate()
@@ -469,13 +571,19 @@ if __name__ == "__main__":
     main()
 
 
-# python kmmlu_evaluator.py
-# python kmmlu_evaluator.py --model_id "your-username/your-finetuned-model"
-# python kmmlu_evaluator.py --batch_size 2  # 메모리 부족 시
-# python kmmlu_evaluator.py --batch_size 8  # 메모리 충분 시
-# python kmmlu_evaluator.py --output_prefix "baseline_v1"
-# # 결과: kmmlu_baseline_v1.csv, kmmlu_baseline_v1_summary.json
-# python kmmlu_evaluator.py --seed 123
-# # compare_models.sh
-# python kmmlu_evaluator.py --model_id "Bllossom/llama-3.2-Korean-Bllossom-3B" --output_prefix "baseline"
-# python kmmlu_evaluator.py --model_id "your-username/finetuned-model" --output_prefix "finetuned"
+# python 4.kmmlu_solar_DPO_CoT_unslothQwen2.5_instruct.py
+# python 4.kmmlu_solar_DPO_CoT_unslothQwen2.5_instruct.py
+# python 4.kmmlu_solar_DPO_CoT_unslothQwen2.5_instruct.py --model_id "your-username/your-finetuned-model"
+# python 4.kmmlu_solar_DPO_CoT_unslothQwen2.5_instruct.py --batch_size 2  # 메모리 부족 시
+# python 4.kmmlu_solar_DPO_CoT_unslothQwen2.5_instruct.py --batch_size 8  # 메모리 충분 시
+# python 4.kmmlu_solar_DPO_CoT_unslothQwen2.5_instruct.py --output_prefix "baseline_v1"
+#
+# python 4.kmmlu_solar_DPO_CoT_unslothQwen2.5_instruct.py \
+#  --model_id "unsloth/Qwen2.5-7B-Instruct" \
+#  --prompting_strategy "zero_shot_cot" \
+#  --num_shots 0 \
+#  --batch_size 1 \
+#  --output_prefix "unsloth_dpo_eval"
+# test -d ./01.dpo_data/dpo_ft_Qwen2.5-7B-Instruct-bnb-4bit && echo "존재함" || echo "존재하지 않음"
+#
+# python 4.kmmlu_solar_DPO_CoT_unslothQwen2.5_instruct.py --model_id "./01.dpo_data/dpo_ft_Qwen2.5-7B-Instruct" --prompting_strategy "zero_shot_cot" --num_shots 0 --batch_size 1 --output_prefix "unsloth_dpo_eval"
