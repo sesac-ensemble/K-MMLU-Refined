@@ -690,9 +690,9 @@ class dataset_KMMLU:
 def main():
     """명령행 인자 파서 및 실행 진입점"""
     parser = argparse.ArgumentParser(description="Dataset SFT + KMMLU 평가 (Few-shot)")
-    parser.add_argument("--model_id", type=str, default="Qwen2.5_7B_instruct")
+    parser.add_argument("--model_id", type=str, default="Qwen/Qwen2.5-7B-Instruct")
     parser.add_argument(
-        "--dataset_id", type=str, default="maywell/ko_wikidata_QA"
+        "--dataset_id", type=str, default="Qwen/Qwen2.5-7B-Instruct"
     )  # 기존: maywell/ko_wikidata_QA
     parser.add_argument("--batch_size", type=int, default=2)
     parser.add_argument("--seed", type=int, default=42)
