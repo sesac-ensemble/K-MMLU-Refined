@@ -84,10 +84,12 @@ class dataset_KMMLU:
         # self.subsets = self._get_official_subsets()
 
         # 평가 대상 subset 지정
-        if eval_subsets == ["humss"]:
+        if eval_subsets and any(s.lower() == "humss" for s in eval_subsets):
             self.subsets = self.HUMSS_SUBSETS
         else:
             self.subsets = eval_subsets or self._get_official_subsets()
+        # 서브셋 확인용 출력
+        print(f"평가 대상 subset 수: {len(self.subsets)} → {self.subsets}")
 
         # KMMLU의 상위 카테고리 매핑
         self.supercategories = self._get_supercategories()
@@ -260,6 +262,7 @@ class dataset_KMMLU:
             lora_alpha=16,
             lora_dropout=0.05,
             bias="none",
+            target_modules=["q_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
             # task_type="CAUSAL_LM"
         )
         print("LoRA 추가 완료")
@@ -276,10 +279,10 @@ class dataset_KMMLU:
         # 학습 설정
         args = TrainingArguments(
             output_dir=os.path.join(self.output_dir, "lora_kmmlu"),
-            num_train_epochs=5,  # 기본 1에서 변경 가능
-            per_device_train_batch_size=1,
+            num_train_epochs=3,  # 기본 1에서 변경 가능
+            per_device_train_batch_size=2,  # 기본 1에서 변경
             gradient_accumulation_steps=4,
-            learning_rate=2e-5,
+            learning_rate=3e-5,
             warmup_ratio=0.03,
             logging_steps=10,
             save_steps=1000,
@@ -765,6 +768,7 @@ def main():
         max_train_samples=args.max_train_samples,
         num_shots=args.num_shots,
         output_dir=args.output_dir,
+        eval_subsets=args.eval_subsets,
     )
 
     # eval_only 옵션이 없으면 SFT → 평가, 있으면 평가만
