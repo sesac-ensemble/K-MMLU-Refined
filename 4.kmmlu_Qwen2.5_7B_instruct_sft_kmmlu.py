@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# 4.kmmlu_Qwen2.5_7B_instruct_5shot_sft.py
+# 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py
 
 # -------------------------------------------------------------
-# -  dataset+ KMMLU Few-shot 평가 통합 스크립트
+# -  dataset+ KMMLU Few-shot(default 5) 평가 통합 스크립트
 # - Unsloth FastLanguageModel + LoRA + 4bit 양자화 지원
-# - 평가 정확도: all_correct / all_total (안전 분모 체크)
-# - KMMLU 45개 subset / 4개 supercategory 매핑
+# - 평가 정확도: all_correct / all_total)
+# - KMMLU 45개 subset / 4개 supercategory 매핑되었으나 11개 subset 만 테스트
 # - Few-shot: --use_manual_fewshots (기본 False → subset의 dev에서 5개 랜덤)
 # - 학습: 모든 train split 병합 + --max_train_samples 제한
 # -
@@ -20,6 +20,8 @@ import argparse
 from datetime import datetime
 from typing import List, Dict, Any
 
+import unsloth
+from unsloth import FastLanguageModel
 import torch
 import pandas as pd
 from tqdm import tqdm
@@ -27,16 +29,16 @@ from datasets import load_dataset, concatenate_datasets
 from transformers import TrainingArguments
 from trl import SFTTrainer
 from peft import LoraConfig, PeftModel
-from unsloth import FastLanguageModel
 
 
 class dataset_KMMLU:
     """데이터셋 + KMMLU 통합 Evaluator
     기능:
-      - (옵션) KoWikiQA , KMMLU 데이터셋으로 LoRA 기반 SFT 수행
+      - KMMLU 데이터셋으로 LoRA 기반 SFT 수행
       - KMMLU 45개 subset Few-shot 평가 (5-shot)
       - (default)supercategory별 평균/전체 평균 계산, CSV/JSON 저장
       - --eval_subsets humss 사용 시 11개의 HUMSS subset 자동 설정
+      - --num_shots 0 적용 시, zero-shot
     """
 
     HUMSS_SUBSETS = [
@@ -571,10 +573,6 @@ class dataset_KMMLU:
         print(f"총 소요 시간: {time_elapsed}")
         print("=" * 60)
 
-        # CSV 파일 저장
-        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        csv_path = os.path.join(self.output_dir, f"dataset_KMMLU_eval_{ts}.csv")
-        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
 
         # 상세 JSON 저장 (요약 + 세부정보 통합)
         detailed_results = {
@@ -605,8 +603,15 @@ class dataset_KMMLU:
                 for _, row in df.iterrows()
             ],
         }
+        
+        # CSV 파일 저장
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # csv_path = os.path.join(self.output_dir, f"dataset_KMMLU_eval_{ts}.csv")
+        csv_path = f"kmmlu_{self.output_prefix}.csv"
+        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+        print(f"=== CSV 저장 완료: {csv_path}")
 
-        json_filename = f"kmmlu_{self.output_prefix}.json"
+        json_filename = f"kmmlu_{self.output_prefix}_summary.json"
         with open(json_filename, "w", encoding="utf-8") as f:
             json.dump(detailed_results, f, ensure_ascii=False, indent=2)
         print(f"=== JSON 저장 완료: {json_filename}")

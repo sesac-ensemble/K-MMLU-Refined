@@ -336,11 +336,6 @@ class KMMLUEvaluator:
         print(f"   정답: {correct} / 전체: {total}")
         print("=" * 60)
 
-        # CSV 파일 저장
-        csv_filename = f"kmmlu_{self.output_prefix}.csv"
-        df.to_csv(csv_filename, index=False, encoding="utf-8-sig")
-        print(f"\n결과 저장 완료: {csv_filename}")
-
         # 상세 JSON 저장 (요약 + 세부정보 통합)
         detailed_results = {
             "model_id": self.model_id,
@@ -371,7 +366,14 @@ class KMMLUEvaluator:
             ],
         }
 
-        json_filename = f"kmmlu_{self.output_prefix}.json"
+        # CSV 파일 저장
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # csv_path = os.path.join(self.output_dir, f"dataset_KMMLU_eval_{ts}.csv")
+        csv_path = f"kmmlu_{self.output_prefix}.csv"
+        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
+        print(f"=== CSV 저장 완료: {csv_path}")
+
+        json_filename = f"kmmlu_{self.output_prefix}_summary.json"
         with open(json_filename, "w", encoding="utf-8") as f:
             json.dump(detailed_results, f, ensure_ascii=False, indent=2)
         print(f"=== JSON 저장 완료: {json_filename}")
