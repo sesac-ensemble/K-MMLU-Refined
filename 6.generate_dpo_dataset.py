@@ -89,6 +89,9 @@ model = get_peft_model(base_model, lora_config)
 # 3. DPO 학습용 데이터셋
 dataset = load_dataset("json", data_files="dpo_dataset.jsonl")["train"]
 
+# 데이터 순서를 무작위로 섞기 (재현 가능한 시드 고정)
+dataset = dataset.shuffle(seed=42)
+
 # 4. DPO 설정
 dpo_config = DPOConfig(
     beta=0.1,
