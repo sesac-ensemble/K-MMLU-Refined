@@ -100,14 +100,28 @@ class dataset_KMMLU:
         # 모델/토크나이저 로드 + 속도 최적화
         self.model, self.tokenizer = self._load_model()
 
-        # LoRA 가중치 자동 로딩: 평가 전용 경로인 경우 적용
+        # LoRA 가중치 자동 로딩: 평가 전용 경로인 경우 적용 
+        # 평가 실행 시, 이미 LoRA 주입(FastLanguageModel.get_peft_model)이 된 모델에 다시 PeftModel.from_pretrained()를 호출하기 때문에 중복 적용 발생으로 주석처리
+        # adapter_config_path = os.path.join(self.model_id, "adapter_config.json")
+        #
+        # if os.path.exists(adapter_config_path):
+        #     try:
+        #         self.model = PeftModel.from_pretrained(self.model, self.model_id)
+        #         print(f"LoRA 가중치 적용 완료: {self.model_id}")
+        #     except Exception as e:
+        #         print(f"LoRA 가중치 로딩 실패: {e}")
+
+        # LoRA 가중치 자동 로딩 (중복 방지 포함)
         adapter_config_path = os.path.join(self.model_id, "adapter_config.json")
         if os.path.exists(adapter_config_path):
-            try:
-                self.model = PeftModel.from_pretrained(self.model, self.model_id)
-                print(f"LoRA 가중치 적용 완료: {self.model_id}")
-            except Exception as e:
-                print(f"LoRA 가중치 로딩 실패: {e}")
+            if hasattr(self.model, "peft_config"):
+                print("이미 LoRA 어댑터가 적용된 모델입니다. 중복 로딩을 건너뜁니다.")
+            else:
+                try:
+                    self.model = PeftModel.from_pretrained(self.model, self.model_id)
+                    print(f"LoRA 가중치 적용 완료: {self.model_id}")
+                except Exception as e:
+                    print(f"LoRA 가중치 로딩 실패: {e}")
 
         # 숫자/문자 정답 모두 대응 (안전 매핑)
         self.letter_map: Dict[str, int] = {
@@ -199,18 +213,14 @@ class dataset_KMMLU:
 
         # HUMSS subset만 데이터셋으로 합치기
         merged = concatenate_datasets(datasets)
-      
+
+        # use_n = min(self.max_train_samples, len(merged))
         # self.max_train_samples가 None이면 전체 데이터 사용
         use_n = (
             len(merged)
             if self.max_train_samples is None
             else min(self.max_train_samples, len(merged))
         )
-        
-        # 데이터 순서를 섞어서 특정 subset 쏠림 방지
-        merged = merged.shuffle(seed=self.seed)
-        
-        # 데이터 순서를 섞은 뒤 상한선만큼 선택
         train_ds = merged.select(range(use_n))
         print(f"학습 데이터 개수: {len(train_ds)} 사용")
 
