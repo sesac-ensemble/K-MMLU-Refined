@@ -199,14 +199,18 @@ class dataset_KMMLU:
 
         # HUMSS subset만 데이터셋으로 합치기
         merged = concatenate_datasets(datasets)
-
-        # use_n = min(self.max_train_samples, len(merged))
+      
         # self.max_train_samples가 None이면 전체 데이터 사용
         use_n = (
             len(merged)
             if self.max_train_samples is None
             else min(self.max_train_samples, len(merged))
         )
+        
+        # 데이터 순서를 섞어서 특정 subset 쏠림 방지
+        merged = merged.shuffle(seed=self.seed)
+        
+        # 데이터 순서를 섞은 뒤 상한선만큼 선택
         train_ds = merged.select(range(use_n))
         print(f"학습 데이터 개수: {len(train_ds)} 사용")
 
