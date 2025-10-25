@@ -26,7 +26,7 @@ from tqdm import tqdm
 from datasets import load_dataset, concatenate_datasets
 from transformers import TrainingArguments
 from trl import SFTTrainer
-from peft import LoraConfig
+from peft import LoraConfig, PeftModel
 from unsloth import FastLanguageModel
 
 
@@ -767,12 +767,8 @@ if __name__ == "__main__":
     # 1) 훈련 + 평가 실시
     #    python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py
     #
-    #
     # 2) 학습된 모델을 불러와서 humss만 평가(학습과 평가를 따로 진행할 때)
-    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py \
-    #   --model_id results/lora_ft_Qwen2.5-7B-Instruct \
-    #   --eval_only \
-    #   --eval_subsets humss
+    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --model_id results/lora_ft_Qwen2.5-7B-Instruct --eval_only --eval_subsets humss
     #
     # 3) 학습(SFT)은 건너뛰고, 평가만 수행(전체 45개 subset)
     # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_only
