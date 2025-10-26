@@ -1,15 +1,9 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-# 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py
+# 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu_self-consistency.py
 
 # -------------------------------------------------------------
-# -  dataset+ KMMLU Few-shot(default 5) 평가 통합 스크립트
-# - Unsloth FastLanguageModel + LoRA + 4bit 양자화 지원
-# - 평가 정확도: all_correct / all_total)
-# - KMMLU 45개 subset / 4개 supercategory 매핑되었으나 11개 subset 만 테스트
-# - Few-shot: --use_manual_fewshots (기본 False → subset의 dev에서 5개 랜덤)
-# - 학습: 모든 train split 병합 + --max_train_samples 제한
-# -
+# 기존 4번 파일에 self-consistency 기능 추가
 # -------------------------------------------------------------
 
 import os
@@ -19,6 +13,7 @@ import random
 import argparse
 from datetime import datetime
 from typing import List, Dict, Any
+from collections import Counter  # 추가(self_consistency_predict 함수)
 
 import unsloth
 from unsloth import FastLanguageModel
@@ -63,11 +58,13 @@ class dataset_KMMLU:
         seed: int = 42,
         use_flash_attn2: bool = True,
         use_manual_fewshots: bool = False,
-        max_train_samples: int = None,
+        max_train_samples: int = 10000,
         num_shots: int = 5,
         output_dir: str = "results",
         output_prefix: str = None,
         eval_subsets: list = None,
+        use_self_consistency: bool = False,
+        sc_samples: int = 20,
     ):
         """모델/데이터 환경 초기화 및 로더 준비"""
         self.model_id = model_id
@@ -81,6 +78,8 @@ class dataset_KMMLU:
         self.output_dir = output_dir
         self.output_prefix = output_prefix or self._generate_output_prefix()
         self.prompting_strategy = "manual" if self.use_manual_fewshots else "random"
+        self.use_self_consistency = use_self_consistency
+        self.sc_samples = sc_samples
 
         # KMMLU 평가용 subset / 상위카테고리
         # self.subsets = self._get_official_subsets()
@@ -169,6 +168,14 @@ class dataset_KMMLU:
             load_in_4bit=True,
         )
 
+        # padding 토큰 안전 설정
+        if getattr(tokenizer, "pad_token", None) is None:
+            tokenizer.pad_token = getattr(tokenizer, "eos_token", None) or "<pad>"
+
+        tokenizer.padding_side = "left"
+        tokenizer.truncation_side = "left"    # 긴 프롬프트에서 앞부분을 버림 (권장)
+        model.config.pad_token_id = tokenizer.pad_token_id  # generate용 안전장치
+
         # FlashAttention2 활성화 시도 (미지원 환경은 조용히 fallback)
         try:
             FastLanguageModel.for_inference(
@@ -178,10 +185,8 @@ class dataset_KMMLU:
         except Exception:
             print("FlashAttention2 미지원 환경 — 기본 모드로 로드")
 
-        # padding 토큰 안전 설정
-        if getattr(tokenizer, "pad_token", None) is None:
-            tokenizer.pad_token = getattr(tokenizer, "eos_token", None) or "<pad>"
-        tokenizer.padding_side = "left"
+        
+
 
         model.eval()
         return model, tokenizer
@@ -287,7 +292,7 @@ class dataset_KMMLU:
             learning_rate=3e-5,
             warmup_ratio=0.03,
             logging_steps=10,
-            save_steps=500,  # 1000 에서 500 으로 변경
+            save_steps=1000,
             report_to="none",
             fp16=False,  # 추가
             bf16=True,  # 추가
@@ -297,7 +302,7 @@ class dataset_KMMLU:
         # SFTTrainer는 text 단일 필드를 사용하여 SFT 수행
         trainer = SFTTrainer(
             model=self.model,
-            tokenizer=self.tokenizer,
+            # tokenizer=self.tokenizer,
             train_dataset=train_ds,
             args=args,
         )
@@ -454,93 +459,206 @@ class dataset_KMMLU:
 
     # -----------------------------
     def evaluate(self):
-        """KMMLU 전체 subset 평가 수행 (정확도: all_correct / all_total)"""
+        """
+        KMMLU 전체 subset 평가 수행 (정확도: all_correct / all_total)
+        Self-Consistency (--use_sc) 선택적 적용
+        """
         results, all_correct, all_total = [], 0, 0
         start_time = datetime.now()
 
-        for subset in tqdm(self.subsets, desc="KMMLU 평가 진행 중"):
-            try:
-                ds = load_dataset("HAERAE-HUB/KMMLU", subset)
+        # --------------------------------------------
+        # Self-Consistency 모드
+        # --------------------------------------------
+        if self.use_self_consistency:
+            print(f"\n[Self-Consistency 모드 활성화] 샘플링 횟수: {self.sc_samples}")
 
-                # 평가 split: test 우선, 없으면 validation → dev → train 순
-                eval_split = next(
-                    (s for s in ["test", "validation", "dev", "train"] if s in ds), None
-                )
-                if not eval_split:
-                    print(f"{subset}: 평가 가능한 split 없음 → skip")
-                    continue
+            num_samples = self.sc_samples
+            temperature = 0.9
+            top_p = 0.9
+            max_new_tokens = 30  # “정답은 A입니다.” 형태까지 안정적으로 출력 가능
 
-                # 정답 필터링 (answer가 1~4인 데이터만 사용)
-                data = [
-                    ex
-                    for ex in ds[eval_split]
-                    if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]
-                ]
-                if not data:
-                    print(f"{subset}: 유효한 정답 데이터 없음 → skip")
-                    continue
+            def _pick_choice_letter(text: str) -> str:
+                tail = text.splitlines()[-1] if text else text
+                m = re.search(r"\b([A-D])\b", tail)
+                if m:
+                    return m.group(1)
+                m = re.search(r"[A-D]", text or "")
+                return m.group(0) if m else ""
 
-                fewshots = self._get_fewshots(subset)
-                if not fewshots:  # fewshot 예시가 없으면 skip
-                    print(f"{subset}: few-shot 예시 없음 → skip")
-                    continue
+            letter_to_idx = {"A": 0, "B": 1, "C": 2, "D": 3}
 
-                # Prompt 및 Truth 생성
-                prompts = [self._make_prompt(ex, fewshots) for ex in data]
-                truths = [self._extract_answer_index(ex) for ex in data]
+            for subset in tqdm(self.subsets, desc="KMMLU Self-Consistency 평가 중"):
+                try:
+                    ds = load_dataset("HAERAE-HUB/KMMLU", subset)
+                    eval_split = next((s for s in ["test", "validation", "dev", "train"] if s in ds), None)
+                    if not eval_split:
+                        print(f"{subset}: 평가 가능한 split 없음 → skip")
+                        continue
 
-                # Batch 평가
-                correct = total = 0
-                for i in range(0, len(prompts), self.batch_size):
-                    batch_prompts = prompts[i : i + self.batch_size]
-                    batch_truths = truths[i : i + self.batch_size]
+                    data = [ex for ex in ds[eval_split] if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]]
+                    if not data:
+                            print(f"{subset}: 유효한 정답 데이터 없음 → skip")
+                            continue
 
-                    inputs = self.tokenizer(
-                        batch_prompts,
-                        return_tensors="pt",
-                        padding=True,
-                        truncation=True,
-                        max_length=3072,
-                    ).to(self.model.device)
+                    fewshots = self._get_fewshots(subset)
+                    if not fewshots:
+                        print(f"{subset}: few-shot 예시 없음 → skip")
+                        continue
 
-                    preds = self._predict_logits(inputs)
+                    prompts = [self._make_prompt(ex, fewshots) for ex in data]
+                    truths = [self._extract_answer_index(ex) for ex in data]
 
-                    for p, t in zip(preds, batch_truths):
-                        if t is not None:
-                            total += 1
-                            if p == t:
-                                correct += 1
+                    correct = total = 0
+                    for i in range(0, len(prompts), self.batch_size):
+                        batch_prompts = prompts[i: i + self.batch_size]
+                        batch_truths = truths[i: i + self.batch_size]
 
-                acc = (correct / total) if total > 0 else 0.0
+                        # 배치 인코딩 직전, 방지주사
+                        self.tokenizer.padding_side = "left"
+                        self.tokenizer.truncation_side = "left"
 
-                # 출력 형식
-                print(f"{subset}: {acc:.4f} ({correct}/{total})")
+                        inputs = self.tokenizer(
+                            batch_prompts,
+                            return_tensors="pt",
+                            padding=True,
+                            truncation=True,
+                            max_length=3072,
+                        ).to(self.model.device)
 
-                results.append(
-                    {
+                        sc_votes = [[] for _ in range(len(batch_prompts))]
+
+                        with torch.no_grad():
+                            for _ in range(num_samples):
+                                outputs = self.model.generate(
+                                    **inputs,
+                                    max_new_tokens=max_new_tokens,
+                                    temperature=temperature,
+                                    do_sample=True,
+                                    top_p=top_p,
+                                    pad_token_id=getattr(self.tokenizer, "pad_token_id", None),
+                                    eos_token_id=getattr(self.tokenizer, "eos_token_id", None),
+                                )
+                                decoded = self.tokenizer.batch_decode(outputs, skip_special_tokens=True)
+                                for k, text in enumerate(decoded):
+                                    ch = _pick_choice_letter(text)
+                                    if ch:
+                                        sc_votes[k].append(ch)
+
+                        preds = []
+                        for votes in sc_votes:
+                            if votes:
+                                final_ch = max(set(votes), key=votes.count)
+                                preds.append(letter_to_idx.get(final_ch, -1))
+                            else:
+                                preds.append(-1)
+
+                        for p, t in zip(preds, batch_truths):
+                            if t is not None:
+                                total += 1
+                                if p == t:
+                                    correct += 1
+
+                    acc = (correct / total) if total > 0 else 0.0
+                    print(f"{subset}: {acc:.4f} ({correct}/{total})")
+
+                    results.append({
                         "Subset": subset,
-                        "Category": self.supercategories.get(subset,"N/A"),
+                        "Category": self.supercategories.get(subset, "N/A"),
                         "Accuracy": acc,
                         "Correct": correct,
                         "Total": total,
-                    }
-                )
+                    })
 
-                all_correct += correct
-                all_total += total
+                    all_correct += correct
+                    all_total += total
 
-            except Exception as e:
-                print(f"{subset} 오류 발생: {e}")
-                results.append(
-                    {
+                except Exception as e:
+                    print(f"{subset} 오류 발생: {e}")
+                    results.append({
                         "Subset": subset,
                         "Category": self.supercategories.get(subset, "N/A"),
                         "Accuracy": 0.0,
                         "Correct": 0,
                         "Total": 0,
-                    }
-                )
+                    })
 
+        # --------------------------------------------
+        # 일반 평가 모드
+        # --------------------------------------------
+        else:
+            print("\n[기본 평가 모드] 1회 예측 기반 평가")
+
+            for subset in tqdm(self.subsets, desc="KMMLU 평가 진행 중"):
+                try:
+                    ds = load_dataset("HAERAE-HUB/KMMLU", subset)
+                    eval_split = next((s for s in ["test", "validation", "dev", "train"] if s in ds), None)
+                    if not eval_split:
+                        print(f"{subset}: 평가 가능한 split 없음 → skip")
+                        continue
+
+                    data = [ex for ex in ds[eval_split] if str(ex.get("answer", "")).strip() in ["1", "2", "3", "4"]]
+                    if not data:
+                        print(f"{subset}: 유효한 정답 데이터 없음 → skip")
+                        continue
+
+                    fewshots = self._get_fewshots(subset)
+                    if not fewshots:
+                        print(f"{subset}: few-shot 예시 없음 → skip")
+                        continue
+
+                    prompts = [self._make_prompt(ex, fewshots) for ex in data]
+                    truths = [self._extract_answer_index(ex) for ex in data]
+
+                    correct = total = 0
+                    for i in range(0, len(prompts), self.batch_size):
+                        batch_prompts = prompts[i: i + self.batch_size]
+                        batch_truths = truths[i: i + self.batch_size]
+
+                        inputs = self.tokenizer(
+                            batch_prompts,
+                            return_tensors="pt",
+                            padding=True,
+                            truncation=True,
+                            max_length=3072,
+                        ).to(self.model.device)
+
+                        preds = self._predict_logits(inputs)
+
+                        for p, t in zip(preds, batch_truths):
+                            if t is not None:
+                                total += 1
+                                if p == t:
+                                    correct += 1
+
+                    acc = (correct / total) if total > 0 else 0.0
+                    print(f"{subset}: {acc:.4f} ({correct}/{total})")
+
+                    results.append({
+                        "Subset": subset,
+                        "Category": self.supercategories.get(subset, "N/A"),
+                        "Accuracy": acc,
+                        "Correct": correct,
+                        "Total": total,
+                    })
+
+                    all_correct += correct
+                    all_total += total
+
+                except Exception as e:
+                    print(f"{subset} 오류 발생: {e}")
+                    results.append(
+                        {
+                        "Subset": subset,
+                        "Category": self.supercategories.get(subset, "N/A"),
+                        "Accuracy": 0.0,
+                        "Correct": 0,
+                        "Total": 0,
+                        }
+                    )
+
+        # --------------------------------------------
+        # 요약 출력 및 저장
+        # --------------------------------------------
         self._summarize(results, all_correct, all_total, datetime.now() - start_time)
 
     # -----------------------------
@@ -551,15 +669,15 @@ class dataset_KMMLU:
         os.makedirs(self.output_dir, exist_ok=True)
         df = pd.DataFrame(results)
 
-        # 전체 평균: all_correct / all_total
-        overall_acc = (correct / total) if total > 0 else 0.0
-        overall_percent = overall_acc * 100
-
         # 카테고리별 평균
         if not df.empty:
             cat_mean = df.groupby("Category")["Accuracy"].mean().sort_index()
         else:
             cat_mean = pd.Series(dtype=float)
+
+        # 전체 평균: all_correct / all_total
+        overall_acc = (correct / total) if total > 0 else 0.0
+        overall_percent = overall_acc * 100
 
         print("\n" + "=" * 60)
         print("분야별 평균 정확도")
@@ -728,6 +846,47 @@ class dataset_KMMLU:
         return {s: cat for cat, subs in cats.items() for s in subs}
 
 
+    # ============================================================
+    # Self-Consistency 기능
+    # ============================================================
+    def self_consistency_predict(self, prompt, num_samples=20):
+        """Self-Consistency 방식: 같은 문제를 여러 번 추론 후 다수결로 답 선택"""
+        answers = []
+
+        # 동일 프롬프트를 여러 번 생성
+        for _ in range(num_samples):
+            inputs = self.tokenizer(prompt, return_tensors="pt").to(self.model.device)
+            outputs = self.model.generate(
+                **inputs,
+                max_new_tokens=30,
+                temperature=0.7,   # 다양성 확보
+                top_p=0.9,
+                do_sample=True,    # 확률적 샘플링
+                pad_token_id=getattr(self.tokenizer, "pad_token_id", None),
+                eos_token_id=getattr(self.tokenizer, "eos_token_id", None),
+            )
+            decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+
+            # 정답 패턴 추출 ("정답은 B입니다", "Answer: C" 등)
+            match = re.findall(r"[정답은|Answer is|Answer:]\s*([A-D1-4])", decoded)
+            if match:
+                answers.append(match[-1])
+            else:
+                # 못 찾은 경우 마지막 줄의 선택지 문자 탐색
+                last_line = decoded.strip().split("\n")[-1]
+                if any(c in last_line for c in "ABCD1234"):
+                    guess = re.findall(r"([A-D1-4])", last_line)
+                    if guess:
+                        answers.append(guess[-1])
+
+        # 다수결로 최종 결정
+        if not answers:
+            return None, []
+        counter = Counter(answers)
+        final_answer = counter.most_common(1)[0][0]
+        return final_answer, answers
+
+
 def main():
     """명령행 인자 파서 및 실행 진입점"""
     parser = argparse.ArgumentParser(description="Dataset SFT + KMMLU 평가 (Few-shot)")
@@ -760,7 +919,17 @@ def main():
         default=None,
         help="평가할 subset 이름 (예: --eval_subsets humss 또는 Accounting Criminal-Law)",
     )
-
+    parser.add_argument(
+        "--use_sc",
+        action="store_true",
+        help="Self-Consistency (다수결 샘플링) 사용 여부"
+    )
+    parser.add_argument(
+        "--sc_samples",
+        type=int,
+        default=5,
+        help="Self-Consistency 시 샘플링 횟수"
+    )
     args = parser.parse_args()
 
     evaluator = dataset_KMMLU(
@@ -774,6 +943,8 @@ def main():
         num_shots=args.num_shots,
         output_dir=args.output_dir,
         eval_subsets=args.eval_subsets,
+        use_self_consistency=args.use_sc,
+        sc_samples=args.sc_samples,
     )
 
     # eval_only 옵션이 없으면 SFT → 평가, 있으면 평가만
@@ -788,15 +959,17 @@ if __name__ == "__main__":
 
     # 예시 실행:
     # 1) 훈련 + 평가 실시
-    #    python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py
+    #    python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu_self-consistency.py
     #
     # 2) 학습된 모델을 불러와서 humss만 평가(학습과 평가를 따로 진행할 때)
-    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --model_id results/lora_ft_Qwen2.5-7B-Instruct --eval_only --eval_subsets humss
+    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu_self-consistency.py --model_id results/lora_ft_Qwen2.5-7B-Instruct --eval_only --eval_subsets humss
     #
     # 3) 학습(SFT)은 건너뛰고, 평가만 수행(전체 45개 subset)
-    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_only
+    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu_self-consistency.py --eval_only
     #
     # 4) 학습(SFT)을 건너뛰고, 평가만 수행(HUMSS 관련 11개 subset)
-    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu.py --eval_only --eval_subsets humss
+    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu_self-consistency.py --eval_only --eval_subsets humss
     #
+    # 5) 학습(SFT) skip, 평가만 수행(HUMSS 관련 11개 subset) + self-consistency 5번 추론
+    # python 4.kmmlu_Qwen2.5_7B_instruct_sft_kmmlu_self-consistency.py --model_id results/lora_ft_Qwen2.5-7B-Instruct --eval_only --eval_subsets humss --use_sc --sc_samples 5
     #
