@@ -16,4 +16,4 @@ tqdm==4.67.1                 # 진행률 표시줄
 # 3. 실험 추적 (LangSmith)
 langsmith==0.4.37            # LLM 실험 추적 및 디버깅 도구
 dotenv
-unsloth
+unsloth                      # python 3.11.8로 진행했음
