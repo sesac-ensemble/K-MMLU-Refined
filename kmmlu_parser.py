@@ -16,7 +16,7 @@ class KMMLUArgumentManager:
         
         # 모델 및 기본 설정
         parser.add_argument('--model_id', type=str, 
-                            default="Bllossom/llama-3.2-Korean-Bllossom-3B",
+                            default="Qwen/Qwen2.5-7B-Instruct",
                             help='평가할 HuggingFace 모델 ID')
         parser.add_argument('--seed', type=int, default=42,
                             help='Random seed (재현성)')
