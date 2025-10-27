@@ -104,7 +104,7 @@ class dataset_KMMLU:
         # 모델/토크나이저 로드 + 속도 최적화
         self.model, self.tokenizer = self._load_model()
 
-        # LoRA 가중치 자동 로딩: 평가 전용 경로인 경우 적용 
+        # LoRA 가중치 자동 로딩: 평가 전용 경로인 경우 적용
         # 평가 실행 시, 이미 LoRA 주입(FastLanguageModel.get_peft_model)이 된 모델에 다시 PeftModel.from_pretrained()를 호출하기 때문에 중복 적용 발생으로 주석처리
         # adapter_config_path = os.path.join(self.model_id, "adapter_config.json")
         #
@@ -264,7 +264,14 @@ class dataset_KMMLU:
             lora_alpha=16,
             lora_dropout=0.05,
             bias="none",
-            target_modules=["q_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            target_modules=[
+                "q_proj",
+                "v_proj",
+                "o_proj",
+                "gate_proj",
+                "up_proj",
+                "down_proj",
+            ],
             # task_type="CAUSAL_LM"
         )
         print("LoRA 추가 완료")
@@ -462,10 +469,8 @@ class dataset_KMMLU:
             try:
                 ds = load_dataset("HAERAE-HUB/KMMLU", subset)
 
-                # 평가 split: test 우선, 없으면 validation → dev → train 순
-                eval_split = next(
-                    (s for s in ["test", "validation", "dev", "train"] if s in ds), None
-                )
+                # 평가 split: train
+                eval_split = "train" if "train" in ds else None
                 if not eval_split:
                     print(f"{subset}: 평가 가능한 split 없음 → skip")
                     continue
@@ -481,7 +486,7 @@ class dataset_KMMLU:
                     continue
 
                 fewshots = self._get_fewshots(subset)
-                if not fewshots:  # fewshot 예시가 없으면 skip
+                if not fewshots:
                     print(f"{subset}: few-shot 예시 없음 → skip")
                     continue
 
@@ -519,7 +524,7 @@ class dataset_KMMLU:
                 results.append(
                     {
                         "Subset": subset,
-                        "Category": self.supercategories.get(subset,"N/A"),
+                        "Category": self.supercategories.get(subset, "N/A"),
                         "Accuracy": acc,
                         "Correct": correct,
                         "Total": total,
@@ -541,7 +546,11 @@ class dataset_KMMLU:
                     }
                 )
 
-        self._summarize(results, all_correct, all_total, datetime.now() - start_time)
+        # --------------------------------------------
+        # 요약 출력 및 저장
+        # --------------------------------------------
+        time_elapsed = datetime.now() - start_time
+        self._summarize(results, all_correct, all_total, time_elapsed)
 
     # -----------------------------
     def _summarize(
@@ -551,15 +560,15 @@ class dataset_KMMLU:
         os.makedirs(self.output_dir, exist_ok=True)
         df = pd.DataFrame(results)
 
-        # 전체 평균: all_correct / all_total
-        overall_acc = (correct / total) if total > 0 else 0.0
-        overall_percent = overall_acc * 100
-
         # 카테고리별 평균
         if not df.empty:
             cat_mean = df.groupby("Category")["Accuracy"].mean().sort_index()
         else:
             cat_mean = pd.Series(dtype=float)
+
+        # 전체 평균: all_correct / all_total
+        overall_acc = (correct / total) if total > 0 else 0.0
+        overall_percent = overall_acc * 100
 
         print("\n" + "=" * 60)
         print("분야별 평균 정확도")
@@ -569,10 +578,10 @@ class dataset_KMMLU:
         else:
             print("집계할 결과가 없습니다.")
         print("-" * 60)
-        print(f"전체 평균 정확도: {overall_acc:.4f} ({correct}/{total})")
+        print(f"전체 평균 정확도: {overall_acc:.4f} ({overall_percent:.2f}%) **")
+        print(f"정답: {correct} / 전체: {total}")
         print(f"총 소요 시간: {time_elapsed}")
         print("=" * 60)
-
 
         # 상세 JSON 저장 (요약 + 세부정보 통합)
         detailed_results = {
@@ -603,7 +612,7 @@ class dataset_KMMLU:
                 for _, row in df.iterrows()
             ],
         }
-        
+
         # CSV 파일 저장
         ts = datetime.now().strftime("%Y%m%d_%H%M%S")
         # csv_path = os.path.join(self.output_dir, f"dataset_KMMLU_eval_{ts}.csv")

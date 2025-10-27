@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 # 2.kmmlu_solar_fewshot_only.py
 
+import os
 import torch
 import pandas as pd
 import re
@@ -138,13 +139,13 @@ class KMMLUEvaluator:
 
     #     return base_prompt
 
-    # ----- CoT 조건 추가(단일 또는 다수 실행할 때) --
+    # ----- Instruction 조건 추가(단일 또는 다수 실행할 때) --
     def _make_prompt(self, few_shot, test_ex):
         base_prompt = "".join(
             [self._format_example(e) for e in few_shot]
         ) + self._format_example(test_ex, include_answer=False)
 
-        # 여러 CoT 문장을 무작위 추가
+        # 여러 Instruction 문장을 무작위 추가
         if self.prompting_strategy == "zero_shot_cot" and self.num_shots == 0:
             cot_phrases = [
                 "Let’s think step by step.",
@@ -153,12 +154,12 @@ class KMMLUEvaluator:
                 "Let’s identify the key requirement of the question.",
                 "Let’s think through this logically.",
                 "Let’s reason through this realistically and step by step.",
-                "First, we need to understand what the question is asking.",
-                "Let’s start by identifying the essential elements of the question.",
-                "We need to distinguish between what the question requires and the background explanation.",
-                "Can we divide this problem into simpler components?",
-                "Let’s break it down into smaller, manageable parts and organize them.",
-                "Let’s clarify our assumptions step by step to solve the problem.",
+                # "First, we need to understand what the question is asking.",
+                # "Let’s start by identifying the essential elements of the question.",
+                # "We need to distinguish between what the question requires and the background explanation.",
+                # "Can we divide this problem into simpler components?",
+                # "Let’s break it down into smaller, manageable parts and organize them.",
+                # "Let’s clarify our assumptions step by step to solve the problem.",
                 # "Let's think step by step.",
                 # "First, let's understand the question clearly.",
                 # "We can solve this by analyzing each option.",
@@ -175,7 +176,7 @@ class KMMLUEvaluator:
             # base_prompt += " " + random.choice(cot_phrases)
 
             # 방법 2: 여러 문장을 함께 추가 (더 자연스러운 프롬프트 생성 가능)
-            base_prompt += "\n" + "\n".join(cot_phrases[:10])  # 원하는 개수만큼 추가
+            base_prompt += "\n" + "\n".join(cot_phrases[:5])  # 원하는 개수만큼 추가
 
         return base_prompt
 
@@ -211,20 +212,6 @@ class KMMLUEvaluator:
             try:
                 dataset = load_dataset("HAERAE-HUB/KMMLU", subset)
 
-                # dev 존재 시 few-shot 추출, 없으면 test 일부 사용
-                # if "dev" in dataset:
-                #     dev_data = list(dataset["dev"])
-                # elif "train" in dataset:
-                #     dev_data = random.sample(
-                #         list(dataset["train"]),
-                #         min(self.num_shots, len(dataset["train"])),
-                #     )
-                # else:
-                #     dev_data = list(dataset["test"][: self.num_shots])
-
-                # ----------------- 아래 수정 ------------------------
-                fewshot_data = []
-
                 if "train" in dataset:
                     data = [
                         ex
@@ -254,7 +241,7 @@ class KMMLUEvaluator:
                     )
                     continue
                 # ----------------- 여기까지 수정 ------------------------
-
+                fewshot_data = []
                 if "test" not in dataset:
                     print(f"{subset}: test split 없음 → skip")
                     continue
@@ -297,6 +284,7 @@ class KMMLUEvaluator:
                         "Subset": subset,
                         "Category": self.supercategories.get(subset, "N/A"),
                         "Accuracy": acc,
+                        "Total": total,
                     }
                 )
                 all_correct += correct
@@ -309,6 +297,8 @@ class KMMLUEvaluator:
                         "Subset": subset,
                         "Category": self.supercategories.get(subset, "N/A"),
                         "Accuracy": 0.0,
+                        "Correct": 0,
+                        "Total": 0,
                     }
                 )
 
@@ -318,8 +308,15 @@ class KMMLUEvaluator:
     # -----------------------------
     def _summarize(self, results, correct, total, time_elapsed):
         """평가 결과를 요약하여 출력 및 저장 (CSV, JSON)"""
+        os.makedirs(self.output_dir, exist_ok=True)
         df = pd.DataFrame(results)
-        cat_mean = df.groupby("Category")["Accuracy"].mean().sort_index()
+
+        # 카테고리별 평균
+        if not df.empty:
+            cat_mean = df.groupby("Category")["Accuracy"].mean().sort_index()
+        else:
+            cat_mean = pd.Series(dtype=float)
+
         cat_mean_percent = cat_mean * 100
 
         # 전체 평균
@@ -327,13 +324,14 @@ class KMMLUEvaluator:
         overall_percent = overall_acc * 100
 
         print("\n" + "=" * 60)
-        print("          분야별 평균 정확도")
+        print("분야별 평균 정확도")
         print("-" * 60)
         for cat, acc in cat_mean.items():
             print(f"{cat:20s}: {acc:.4f} ({acc*100:.2f}%)")
         print("-" * 60)
         print(f"\n** 전체 평균 정확도: {overall_acc:.4f} ({overall_percent:.2f}%) **")
-        print(f"   정답: {correct} / 전체: {total}")
+        print(f"정답: {correct} / 전체: {total}")
+        print(f"총 소요 시간: {time_elapsed}")
         print("=" * 60)
 
         # 상세 JSON 저장 (요약 + 세부정보 통합)

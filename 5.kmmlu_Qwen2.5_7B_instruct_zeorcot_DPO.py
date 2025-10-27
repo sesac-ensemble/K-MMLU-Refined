@@ -221,10 +221,8 @@ def evaluate(self):
         try:
             ds = load_dataset("HAERAE-HUB/KMMLU", subset)
 
-            # 평가 split: test 우선, 없으면 validation → dev → train 순
-            eval_split = next(
-                (s for s in ["test", "validation", "dev", "train"] if s in ds), None
-            )
+            # 평가 split: train
+            eval_split = "train" if "train" in ds else None
             if not eval_split:
                 print(f"{subset}: 평가 가능한 split 없음 → skip")
                 continue
