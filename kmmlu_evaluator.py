@@ -351,7 +351,7 @@ class KMMLUEvaluator:
         print("-"*60)
         print(cat_mean.to_string(float_format="%.4f"))
         print("-"*60)
-        print(f"\n** 전체 평균 정확도: {overall_acc:.2f}% ({correct}/{total}) **")
+        print(f"\n** 전체 평균 정확도: {overall_acc * 100:.2f}% ({correct}/{total}) **")
         print("="*60)
         
         result_dir = "result"
@@ -378,6 +378,10 @@ class KMMLUEvaluator:
                 "total_questions": total,
                 "category_accuracy": {k: round(v, 4) for k, v in cat_mean.to_dict().items()}
             },
+            "peak_memory_usage": {
+                "model_load": f"{self.peak_mem_gb:.2f} GB",
+                "inference": f"{peak_inference_mem_gb:.2f} GB"
+            },
             "subset_scores": [
                 {
                     "subset": row["Subset"],
@@ -385,11 +389,7 @@ class KMMLUEvaluator:
                     "accuracy": round(row["Accuracy"], 4)
                 }
                 for _, row in df.iterrows()
-            ],
-            "peak_memory_usage": {
-                "model_load": f"{self.peak_mem_gb:.2f} GB",
-                "inference": f"{peak_inference_mem_gb:.2f} GB"
-            }
+            ]
         }
 
         json_filename = os.path.join(result_dir, f"kmmlu_{self.output_prefix}_summary.json")
