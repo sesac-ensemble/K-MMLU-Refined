@@ -60,7 +60,7 @@ class KMMLUEvaluator:
         if self.zero_shot_cot:
             strategy = "zero_shot_cot"
         else:
-            strategy = f"{self.num_shots}shot_{self.prompting_strategy}"
+            strategy = f"{self.prompting_strategy}"
         return f"{model_name}_{strategy}_{timestamp}"
 
     def _load_model(self):
@@ -392,7 +392,7 @@ class KMMLUEvaluator:
             ]
         }
 
-        json_filename = os.path.join(result_dir, f"kmmlu_{self.output_prefix}_summary.json")
+        json_filename = os.path.join(result_dir, f"kmmlu_{self.output_prefix}.json")
         with open(json_filename, 'w', encoding='utf-8') as f:
             json.dump(detailed_results, f, ensure_ascii=False, indent=2)
         print(f"요약 저장 완료: {json_filename}\n")
