@@ -145,7 +145,7 @@ class KMMLUEvaluator:
             [self._format_example(e) for e in few_shot]
         ) + self._format_example(test_ex, include_answer=False)
 
-        # 여러 Instruction 문장을 무작위 추가
+        # 여러 CoT 문장을 무작위 추가
         if self.prompting_strategy == "zero_shot_cot" and self.num_shots == 0:
             cot_phrases = [
                 "Let’s think step by step.",

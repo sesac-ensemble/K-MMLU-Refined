@@ -1,0 +1,135 @@
+🦥 Unsloth: Will patch your computer to enable 2x faster free finetuning.
+🦥 Unsloth Zoo will now patch everything to make training faster!
+평가 대상 subset 수: 11 → ['Accounting', 'Criminal-Law', 'Economics', 'Education', 'Law', 'Management', 'Political-Science-and-Sociology', 'Psychology', 'Social-Welfare', 'Taxation', 'Korean-History']
+
+============================================================
+모델 로딩 중: Qwen/Qwen2.5-7B-Instruct
+============================================================
+
+[Unsloth 모드] FastLanguageModel 로드...
+==((====))==  Unsloth 2025.10.6: Fast Qwen2 patching. Transformers: 4.56.2.
+   \\   /|    NVIDIA L4. Num GPUs = 1. Max memory: 21.964 GB. Platform: Linux.
+O^O/ \_/ \    Torch: 2.8.0+cu128. CUDA: 8.9. CUDA Toolkit: 12.8. Triton: 3.4.0
+\        /    Bfloat16 = TRUE. FA [Xformers = 0.0.32.post2. FA2 = False]
+ "-____-"     Free license: http://github.com/unslothai/unsloth
+Unsloth: Fast downloading is enabled - ignore downloading bars which are red colored!
+Unsloth 모델 로딩 완료
+[LoRA] Unsloth Fast PEFT 주입
+LoRA 적용 완료
+FlashAttention2 미지원 → 기본 모드
+[GPU-MEM] 로드 후: 7168.1MB / 22491.2MB
+
+데이터셋 로딩 중...
+  - Accounting loading...
+  - Criminal-Law loading...
+  - Economics loading...
+  - Education loading...
+  - Law loading...
+  - Management loading...
+  - Political-Science-and-Sociology loading...
+  - Psychology loading...
+  - Social-Welfare loading...
+  - Taxation loading...
+  - Korean-History loading...
+학습 데이터 개수: 5215 사용
+[SFT] Unsloth Fast PEFT 재확인/주입
+
+SFT 학습 시작...
+Unsloth: Will smartly offload gradients to save VRAM!
+{'loss': 1.9252, 'grad_norm': 0.8087112307548523, 'learning_rate': 1.3500000000000001e-05, 'epoch': 0.02}
+{'loss': 1.9866, 'grad_norm': 0.7332037091255188, 'learning_rate': 2.8499999999999998e-05, 'epoch': 0.03}
+{'loss': 1.7644, 'grad_norm': 0.6605226397514343, 'learning_rate': 2.9572784810126585e-05, 'epoch': 0.05}
+{'loss': 1.7733, 'grad_norm': 0.680929958820343, 'learning_rate': 2.9098101265822786e-05, 'epoch': 0.06}
+{'loss': 1.6996, 'grad_norm': 0.6311966776847839, 'learning_rate': 2.8623417721518986e-05, 'epoch': 0.08}
+{'loss': 1.745, 'grad_norm': 0.7240407466888428, 'learning_rate': 2.814873417721519e-05, 'epoch': 0.09}
+{'loss': 1.729, 'grad_norm': 0.7549923062324524, 'learning_rate': 2.7674050632911393e-05, 'epoch': 0.11}
+{'loss': 1.6301, 'grad_norm': 0.6397762298583984, 'learning_rate': 2.7199367088607594e-05, 'epoch': 0.12}
+{'loss': 1.6538, 'grad_norm': 0.6961478590965271, 'learning_rate': 2.6724683544303797e-05, 'epoch': 0.14}
+{'loss': 1.6937, 'grad_norm': 0.9206770658493042, 'learning_rate': 2.625e-05, 'epoch': 0.15}
+[GPU-MEM] train step 108 | Allocated: 7076.8MB | Reserved: 9166.0MB | Free: 13057.1MB / Total: 22491.2MB
+{'loss': 1.6792, 'grad_norm': 0.8310001492500305, 'learning_rate': 2.5775316455696205e-05, 'epoch': 0.17}
+{'loss': 1.6288, 'grad_norm': 0.8692464232444763, 'learning_rate': 2.530063291139241e-05, 'epoch': 0.18}
+{'loss': 1.6403, 'grad_norm': 0.8364303708076477, 'learning_rate': 2.482594936708861e-05, 'epoch': 0.2}
+{'loss': 1.6029, 'grad_norm': 0.948074996471405, 'learning_rate': 2.435126582278481e-05, 'epoch': 0.21}
+{'loss': 1.5916, 'grad_norm': 0.9804952144622803, 'learning_rate': 2.3876582278481013e-05, 'epoch': 0.23}
+{'loss': 1.6523, 'grad_norm': 1.118439793586731, 'learning_rate': 2.3401898734177216e-05, 'epoch': 0.25}
+{'loss': 1.6524, 'grad_norm': 1.1057484149932861, 'learning_rate': 2.2927215189873417e-05, 'epoch': 0.26}
+{'loss': 1.6464, 'grad_norm': 1.0709428787231445, 'learning_rate': 2.245253164556962e-05, 'epoch': 0.28}
+{'loss': 1.6044, 'grad_norm': 1.1423550844192505, 'learning_rate': 2.1977848101265824e-05, 'epoch': 0.29}
+{'loss': 1.5381, 'grad_norm': 1.1626155376434326, 'learning_rate': 2.1503164556962028e-05, 'epoch': 0.31}
+{'loss': 1.5213, 'grad_norm': 1.1868046522140503, 'learning_rate': 2.1028481012658228e-05, 'epoch': 0.32}
+[GPU-MEM] train step 217 | Allocated: 7076.8MB | Reserved: 9166.0MB | Free: 13057.1MB / Total: 22491.2MB
+{'loss': 1.5524, 'grad_norm': 1.0566928386688232, 'learning_rate': 2.0553797468354432e-05, 'epoch': 0.34}
+{'loss': 1.6063, 'grad_norm': 1.1197680234909058, 'learning_rate': 2.0079113924050635e-05, 'epoch': 0.35}
+{'loss': 1.5975, 'grad_norm': 1.2420306205749512, 'learning_rate': 1.9604430379746836e-05, 'epoch': 0.37}
+{'loss': 1.5676, 'grad_norm': 1.2337526082992554, 'learning_rate': 1.9129746835443036e-05, 'epoch': 0.38}
+{'loss': 1.5979, 'grad_norm': 1.2566388845443726, 'learning_rate': 1.865506329113924e-05, 'epoch': 0.4}
+{'loss': 1.6149, 'grad_norm': 1.4153480529785156, 'learning_rate': 1.8180379746835443e-05, 'epoch': 0.41}
+{'loss': 1.585, 'grad_norm': 1.1004858016967773, 'learning_rate': 1.7705696202531647e-05, 'epoch': 0.43}
+{'loss': 1.5477, 'grad_norm': 1.4112492799758911, 'learning_rate': 1.7231012658227847e-05, 'epoch': 0.44}
+{'loss': 1.5886, 'grad_norm': 1.2126638889312744, 'learning_rate': 1.675632911392405e-05, 'epoch': 0.46}
+{'loss': 1.5835, 'grad_norm': 1.403107762336731, 'learning_rate': 1.6281645569620255e-05, 'epoch': 0.48}
+{'loss': 1.5505, 'grad_norm': 1.375849962234497, 'learning_rate': 1.580696202531646e-05, 'epoch': 0.49}
+[GPU-MEM] train step 325 | Allocated: 7077.2MB | Reserved: 10908.0MB | Free: 11315.1MB / Total: 22491.2MB
+{'loss': 1.5607, 'grad_norm': 1.248572826385498, 'learning_rate': 1.5332278481012655e-05, 'epoch': 0.51}
+{'loss': 1.5616, 'grad_norm': 1.3204704523086548, 'learning_rate': 1.485759493670886e-05, 'epoch': 0.52}
+{'loss': 1.6192, 'grad_norm': 1.3837989568710327, 'learning_rate': 1.4382911392405064e-05, 'epoch': 0.54}
+{'loss': 1.5581, 'grad_norm': 1.4706014394760132, 'learning_rate': 1.3908227848101265e-05, 'epoch': 0.55}
+{'loss': 1.5401, 'grad_norm': 1.2399773597717285, 'learning_rate': 1.3433544303797468e-05, 'epoch': 0.57}
+{'loss': 1.6108, 'grad_norm': 1.4754050970077515, 'learning_rate': 1.2958860759493672e-05, 'epoch': 0.58}
+{'loss': 1.6061, 'grad_norm': 1.3607709407806396, 'learning_rate': 1.2484177215189874e-05, 'epoch': 0.6}
+{'loss': 1.5962, 'grad_norm': 1.185519814491272, 'learning_rate': 1.2009493670886076e-05, 'epoch': 0.61}
+{'loss': 1.5723, 'grad_norm': 1.4101006984710693, 'learning_rate': 1.1534810126582278e-05, 'epoch': 0.63}
+{'loss': 1.5354, 'grad_norm': 1.4646424055099487, 'learning_rate': 1.1060126582278482e-05, 'epoch': 0.64}
+{'loss': 1.5748, 'grad_norm': 1.2101048231124878, 'learning_rate': 1.0585443037974684e-05, 'epoch': 0.66}
+[GPU-MEM] train step 433 | Allocated: 7077.2MB | Reserved: 10908.0MB | Free: 11315.1MB / Total: 22491.2MB
+{'loss': 1.5797, 'grad_norm': 1.656925082206726, 'learning_rate': 1.0110759493670888e-05, 'epoch': 0.67}
+{'loss': 1.5642, 'grad_norm': 1.492952823638916, 'learning_rate': 9.636075949367088e-06, 'epoch': 0.69}
+{'loss': 1.5967, 'grad_norm': 1.4373935461044312, 'learning_rate': 9.161392405063292e-06, 'epoch': 0.71}
+{'loss': 1.5618, 'grad_norm': 1.5610640048980713, 'learning_rate': 8.686708860759494e-06, 'epoch': 0.72}
+{'loss': 1.632, 'grad_norm': 1.6284265518188477, 'learning_rate': 8.212025316455697e-06, 'epoch': 0.74}
+{'loss': 1.582, 'grad_norm': 1.3478548526763916, 'learning_rate': 7.7373417721519e-06, 'epoch': 0.75}
+{'loss': 1.6076, 'grad_norm': 1.3446727991104126, 'learning_rate': 7.262658227848102e-06, 'epoch': 0.77}
+{'loss': 1.6098, 'grad_norm': 1.5692678689956665, 'learning_rate': 6.787974683544304e-06, 'epoch': 0.78}
+{'loss': 1.5219, 'grad_norm': 1.4208025932312012, 'learning_rate': 6.313291139240507e-06, 'epoch': 0.8}
+{'loss': 1.6241, 'grad_norm': 1.3929948806762695, 'learning_rate': 5.83860759493671e-06, 'epoch': 0.81}
+[GPU-MEM] train step 540 | Allocated: 7077.2MB | Reserved: 10910.0MB | Free: 11313.1MB / Total: 22491.2MB
+{'loss': 1.5496, 'grad_norm': 1.466254472732544, 'learning_rate': 5.363924050632912e-06, 'epoch': 0.83}
+{'loss': 1.5963, 'grad_norm': 1.645031452178955, 'learning_rate': 4.8892405063291145e-06, 'epoch': 0.84}
+{'loss': 1.4687, 'grad_norm': 1.5690685510635376, 'learning_rate': 4.4145569620253165e-06, 'epoch': 0.86}
+{'loss': 1.6072, 'grad_norm': 1.4286952018737793, 'learning_rate': 3.939873417721519e-06, 'epoch': 0.87}
+{'loss': 1.6383, 'grad_norm': 1.4756442308425903, 'learning_rate': 3.465189873417722e-06, 'epoch': 0.89}
+{'loss': 1.6161, 'grad_norm': 1.4921393394470215, 'learning_rate': 2.9905063291139242e-06, 'epoch': 0.9}
+{'loss': 1.6287, 'grad_norm': 1.5151174068450928, 'learning_rate': 2.5158227848101266e-06, 'epoch': 0.92}
+{'loss': 1.5758, 'grad_norm': 1.3776283264160156, 'learning_rate': 2.041139240506329e-06, 'epoch': 0.94}
+{'loss': 1.5058, 'grad_norm': 1.4255915880203247, 'learning_rate': 1.5664556962025317e-06, 'epoch': 0.95}
+{'loss': 1.5492, 'grad_norm': 1.4219247102737427, 'learning_rate': 1.091772151898734e-06, 'epoch': 0.97}
+{'loss': 1.5718, 'grad_norm': 1.5599874258041382, 'learning_rate': 6.170886075949367e-07, 'epoch': 0.98}
+[GPU-MEM] train step 649 | Allocated: 7077.2MB | Reserved: 10910.0MB | Free: 11313.1MB / Total: 22491.2MB
+{'loss': 1.5721, 'grad_norm': 1.50545334815979, 'learning_rate': 1.4240506329113925e-07, 'epoch': 1.0}
+{'train_runtime': 1814.9782, 'train_samples_per_second': 2.873, 'train_steps_per_second': 0.359, 'train_loss': 1.613495999684363, 'epoch': 1.0}
+SFT 학습 완료 및 모델 저장: results/lora_ft_Qwen2.5-7B-Instruct
+Accounting: 0.6000 (27/45)
+Criminal-Law: 0.5059 (43/85)
+Economics: 0.5638 (53/94)
+Education: 0.5000 (1/2)
+Law: 0.5652 (733/1297)
+Management: 0.7236 (992/1371)
+[GPU-MEM] eval Political-Science-and-Sociology step | Allocated: 7077.1MB | Reserved: 11582.0MB | Free: 10641.1MB / Total: 22491.2MB
+Political-Science-and-Sociology: 0.7273 (32/44)
+Psychology: 0.7164 (970/1354)
+Social-Welfare: 0.8026 (728/907)
+Taxation: 0.3333 (5/15)
+Korean-History: 0.0000 (0/1)
+
+============================================================
+분야별 평균 정확도
+------------------------------------------------------------
+Category
+HUMSS   0.5489
+------------------------------------------------------------
+전체 평균 정확도: 0.6872 (3584/5215)
+총 소요 시간: 0:10:01.705085
+============================================================
+=== CSV 저장 완료: kmmlu_Qwen2.5-7B-Instruct_20251028_014832.csv
+=== JSON 저장 완료: kmmlu_Qwen2.5-7B-Instruct_20251028_014832_summary.json

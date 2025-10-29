@@ -1,0 +1,42 @@
+🦥 Unsloth: Will patch your computer to enable 2x faster free finetuning.
+🦥 Unsloth Zoo will now patch everything to make training faster!
+평가 대상 subset 수: 11 → ['Accounting', 'Criminal-Law', 'Economics', 'Education', 'Law', 'Management', 'Political-Science-and-Sociology', 'Psychology', 'Social-Welfare', 'Taxation', 'Korean-History']
+
+============================================================
+모델 로딩 중: Qwen/Qwen2.5-7B-Instruct
+============================================================
+
+AutoModelForCausalLM 로드...
+HF 모델 로딩 완료
+[GPU-MEM] 로드 후: 14740.1MB / 22491.2MB
+
+[메모리] 모델 로딩 완료. 최대 VRAM 사용량: 14.19 GB
+
+Accounting: 0.5111 (23/45)
+Criminal-Law: 0.4941 (42/85)
+Economics: 0.5532 (52/94)
+Education: 0.5000 (1/2)
+Law: 0.5466 (709/1297)
+[GPU-MEM] eval Management step | Allocated: 14537.8MB | Reserved: 17022.0MB | Free: 5231.1MB / Total: 22491.2MB
+Management: 0.7090 (972/1371)
+[GPU-MEM] eval Political-Science-and-Sociology step | Allocated: 14537.8MB | Reserved: 17022.0MB | Free: 5231.1MB / Total: 22491.2MB
+Political-Science-and-Sociology: 0.6364 (28/44)
+Psychology: 0.6942 (940/1354)
+[GPU-MEM] eval Social-Welfare step | Allocated: 14537.8MB | Reserved: 17022.0MB | Free: 5231.1MB / Total: 22491.2MB
+Social-Welfare: 0.7685 (697/907)
+Taxation: 0.3333 (5/15)
+Korean-History: 0.0000 (0/1)
+
+[메모리] 추론 완료. 최대 VRAM 사용량: 14.60 GB
+
+============================================================
+분야별 평균 정확도
+------------------------------------------------------------
+Category
+HUMSS   0.5224
+------------------------------------------------------------
+전체 평균 정확도: 0.6652 (3469/5215)
+총 소요 시간: 0:06:06.066241
+============================================================
+=== CSV 저장 완료: kmmlu_Qwen2.5-7B-Instruct_20251029_005643.csv
+=== JSON 저장 완료: kmmlu_Qwen2.5-7B-Instruct_20251029_005643_summary.json
