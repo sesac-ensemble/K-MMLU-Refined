@@ -1,8 +1,9 @@
 # K-MMLU-Refined
 K-MMLU 벤치마크 최적화 프로젝트
 
+<br />
 
-# 변경사항
+## 변경사항
 ### kmmlu_evaluator.py
 1. 환경 설정을 위한 bash 폴더 추가
 2. unsloth 적용
@@ -10,6 +11,8 @@ K-MMLU 벤치마크 최적화 프로젝트
 4. dataset load 최적화 적용
 5. csv, json 파일 result 폴더에 추가
 6. 최대 메모리 사용량 추적 추가
+
+<br />
 
 ## LangSmith 평가 로깅 스크립트 (K-MMLU-Refined)
 
