@@ -3,6 +3,7 @@ K-MMLU 벤치마크 최적화 프로젝트
 
 
 # 변경사항
+### kmmlu_evaluator.py
 1. 환경 설정을 위한 bash 폴더 추가
 2. unsloth 적용
 3. subsets parser 추가
